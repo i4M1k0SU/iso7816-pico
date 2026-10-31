@@ -35,8 +35,8 @@ typedef struct {
     uint32_t tx_echo_errors;   // our own character read back differently
     uint32_t tx_timeouts;
     uint32_t clk_hz;           // measured during the last ATR
-    uint32_t rst_rises;        // RST rising edges seen (IRQ)
-    uint32_t rst_falls;        // RST falling edges seen (IRQ)
+    volatile uint32_t rst_rises; // RST rising edges seen (written by the RST interrupt)
+    volatile uint32_t rst_falls; // RST falling edges seen (written by the RST interrupt)
     uint32_t atr_attempts;     // phy_start_session() calls
     const char *last_error;    // why the last session start / transfer failed
     // Diagnostics for the last ATR attempt
