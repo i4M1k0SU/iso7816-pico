@@ -166,12 +166,20 @@ bool fs_record_write(const fs_file_t *ef, uint16_t n, const uint8_t *in, uint16_
     if (ef->type == FS_EF_LINEAR_VARIABLE) {
         p[0] = (uint8_t)len;
         p[1] = (uint8_t)(len >> 8);
-        memcpy(p + 2, in, len);
+        p += 2;
     } else {
         memset(p, 0, ef->rec_size);
-        memcpy(p, in, len);
     }
+    if (len) memcpy(p, in, len);
     if (n > rec_used(ef) && ef->type != FS_EF_CYCLIC) rec_set_used(ef, n);
+    return true;
+}
+
+bool fs_record_erase(const fs_file_t *ef, uint16_t n) {
+    uint16_t slot;
+    if (!rec_slot(ef, n, &slot)) return false;
+    // Erasing does not create a record: the number of records in use and the cyclic head stay as they are.
+    memset(slot_ptr(ef, slot), 0, slot_size(ef));   // linear variable: the stored length becomes 0 as well
     return true;
 }
 
@@ -532,7 +540,7 @@ uint16_t fs_cmd_erase_record(const apdu_t *cmd, apdu_resp_t *resp) {
         return SW_WRONG_P1P2;
     }
     if (!first || first > count) return SW_RECORD_NOT_FOUND;
-    for (uint16_t n = first; n <= last; n++) fs_record_write(ef, n, NULL, 0);
+    for (uint16_t n = first; n <= last; n++) fs_record_erase(ef, n);
     file_changed(ef);
     return SW_OK;
 }

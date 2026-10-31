@@ -81,6 +81,8 @@ uint16_t fs_record_count(const fs_file_t *ef);
 bool fs_record_read(const fs_file_t *ef, uint16_t n, const uint8_t **out, uint16_t *len);
 bool fs_record_write(const fs_file_t *ef, uint16_t n, const uint8_t *in, uint16_t len);
 bool fs_record_append(const fs_file_t *ef, const uint8_t *in, uint16_t len, uint16_t *n_out);
+// Zero record n (linear variable: its length becomes 0).  The number of records in use is not changed.
+bool fs_record_erase(const fs_file_t *ef, uint16_t n);
 
 // Access condition evaluation (hook first, then the PIN rule).
 bool fs_access_ok(uint8_t ch, const fs_file_t *f, uint8_t op);

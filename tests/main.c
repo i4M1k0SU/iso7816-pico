@@ -61,6 +61,7 @@ int main(int argc, char **argv) {
     run_test("t0", test_t0);
     run_test("t1", test_t1);
     run_test("dispatch", test_dispatch);
+    run_test("fs", test_fs);
     run_test("card suite", test_card_suite);
     printf("\n%d checks, %d failure(s)\n", g_checks, g_failures);
     return g_failures ? 1 : 0;
