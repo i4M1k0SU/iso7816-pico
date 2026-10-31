@@ -57,6 +57,8 @@ static absolute_time_t s_trace_t0;
 
 static phy_stats_t s_stats;
 static void (*s_idle_hook)(void);
+static uint s_io_gpio = ISO7816_PIN_IO;   // the I/O line (a spare pin during the self-test)
+static bool s_dbg_error_low_seen;        // the last error signal really drove the line low
 
 static void trace_reset(void) {
     s_trace_len = 0;
@@ -224,11 +226,14 @@ static void rx_restart(void) {
 static void send_error_signal(void) {
     pio_sm_set_enabled(s_pio, s_sm_rx, false);
     pio_sm_put(s_pio, s_sm_tx, ERROR_SIGNAL_FRAME);
-    absolute_time_t deadline = make_timeout_time_us(TX_CHAR_TIMEOUT_US);
-    while (!pio_sm_is_tx_fifo_empty(s_pio, s_sm_tx) && !time_reached(deadline)) {
-        tight_loop_contents();
+    // The pulse is over after ERROR_SIGNAL_LOW_END_ETU; watch the line meanwhile so that the self-test can verify
+    // that the low level really appeared.
+    absolute_time_t until = make_timeout_time_us(phy_etu_us() * ERROR_SIGNAL_LOW_END_ETU + phy_etu_us() / 4);
+    bool low = false;
+    while (!time_reached(until)) {
+        if (!gpio_get(s_io_gpio)) low = true;
     }
-    sleep_us(phy_etu_us() * ERROR_SIGNAL_LOW_END_ETU + phy_etu_us() / 4);
+    s_dbg_error_low_seen = low;
     rx_restart();
 }
 
@@ -528,6 +533,7 @@ void phy_selftest(char *msg, size_t cap) {
     pio_sm_set_consecutive_pindirs(s_pio, s_sm_tx, SELFTEST_IO_PIN, 1, false);
     pio_gpio_init(s_pio, SELFTEST_IO_PIN);
     gpio_pull_up(SELFTEST_IO_PIN);
+    s_io_gpio = SELFTEST_IO_PIN;
 
     // Point both state machines at the test pins.
     pio_sm_config saved_rx = s_cfg_rx, saved_tx = s_cfg_tx;
@@ -567,12 +573,30 @@ void phy_selftest(char *msg, size_t cap) {
         fast_errors = s_stats.tx_echo_errors;
         if (fast_ok) fast_etu = absolute_time_diff_us(s_echo_times[0], s_echo_times[1]) / 12;
     }
+    // Parity error path: a frame with a wrong parity bit must be rejected (rx_pop() returns -1), answered with the
+    // error signal (line driven low around 10.5..12.5 ETU) and dropped.
+    bool perr_ok = false, perr_low = false;
+    uint32_t perr_count = s_stats.rx_parity_errors;
+    if (ok) {
+        phy_params_t q = PHY_PARAMS_DEFAULT;
+        phy_apply_params(&q);
+        pio_sm_put(s_pio, s_sm_tx, make_frame(0x5A) ^ (1u << 9));   // flipped parity bit
+        uint8_t b;
+        int r = 0;
+        absolute_time_t deadline = make_timeout_time_ms(50);
+        while ((r = rx_pop(&b)) == 0 && !time_reached(deadline)) {}
+        perr_ok = r == -1 && s_stats.rx_parity_errors == perr_count + 1;
+        perr_low = s_dbg_error_low_seen;
+        // Nothing may be left over for the next session.
+        perr_ok = perr_ok && phy_rx_timeout(&b, 2000) == 0;
+    }
     s_ignore_reset = false;
 
     snprintf(msg, cap,
              "selftest(loopback %s): first echo after %lu us (expect %lu), CLK %lu Hz (expect %lu), "
              "echo err %lu, mismatch idx %lu exp %02lX got 0x%03lX, err=%s | ETU rx %lld us tx %lld us "
-             "(expect %lu) | F/D=372/4 inverse: %s, ETU %lld us (expect %lu), echo err %lu",
+             "(expect %lu) | F/D=372/4 inverse: %s, ETU %lld us (expect %lu), echo err %lu | "
+             "parity error: %s, line low: %s",
              ok ? "OK" : "FAILED", (unsigned long)s_stats.dbg_delay_us,
              (unsigned long)((12ull * 2 + 19) * 372 / 2 * 1000000ull / SELFTEST_CLK_HZ),
              (unsigned long)clk_from_echo, (unsigned long)SELFTEST_CLK_HZ,
@@ -581,7 +605,8 @@ void phy_selftest(char *msg, size_t cap) {
              s_stats.last_error ? s_stats.last_error : "-", (long long)rx_etu, (long long)tx_etu,
              (unsigned long)(372ull * 1000000ull / SELFTEST_CLK_HZ),
              fast_ok ? "OK" : "FAILED", (long long)fast_etu,
-             (unsigned long)(93ull * 1000000ull / SELFTEST_CLK_HZ), (unsigned long)fast_errors);
+             (unsigned long)(93ull * 1000000ull / SELFTEST_CLK_HZ), (unsigned long)fast_errors,
+             perr_ok ? "detected" : "MISSED", perr_low ? "yes" : "NO");
 
     // Put everything back.
     phy_enter_reset();
@@ -589,6 +614,7 @@ void phy_selftest(char *msg, size_t cap) {
     s_cfg_rx = saved_rx;
     s_cfg_tx = saved_tx;
     s_params = (phy_params_t)PHY_PARAMS_DEFAULT;
+    s_io_gpio = ISO7816_PIN_IO;
     patch_clk_gpio(ISO7816_PIN_CLK);
     pio_sm_set_enabled(pio_clk, sm_clk, false);
     pio_remove_program(pio_clk, &clkgen_program, off_clk);
