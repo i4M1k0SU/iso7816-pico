@@ -108,7 +108,7 @@ static bool run_command(const uint8_t hdr[5], apdu_t *cmd, apdu_case_t kind) {
     return ok;
 }
 
-// xx C2 00 00 Lc <part of an extended APDU>
+// xx C2 00 00 Lc <part of an extended APDU>; Lc = 255 continues the chain, a shorter Lc (0 included) ends it.
 static bool handle_envelope(const uint8_t hdr[5]) {
     uint8_t *buf = dispatch_cmd_buf();
     uint32_t lc = hdr[4];
@@ -120,8 +120,10 @@ static bool handle_envelope(const uint8_t hdr[5]) {
         if (!send_ack(hdr[1]) || !rx_data(&buf[s_env_len], lc)) return false;
         s_env_len += lc;
     }
-    // A full ENVELOPE (255 bytes) means more is coming; a shorter one ends the chain and the accumulated bytes must
-    // form one APDU.
+    // ISO 7816-4 does not say how an ENVELOPE chain ends, so this is our convention (docs/internals.md): an ENVELOPE
+    // with Lc = 255 means more is coming (9000); any shorter one, including Lc = 0 (P3 = 00), is the last piece and
+    // the accumulated bytes must decode as one APDU (6A80 otherwise).  A host whose total length is a multiple of 255
+    // therefore ends the chain with an empty ENVELOPE.
     if (lc == 255) return send_sw(SW_OK);
     apdu_t cmd;
     bool complete = apdu_decode(buf, s_env_len, &cmd);
