@@ -84,7 +84,6 @@ target_link_libraries(iso7816-pico
         pico_rand
         hardware_flash
         hardware_pio
-        hardware_pwm
         hardware_watchdog
 )
 

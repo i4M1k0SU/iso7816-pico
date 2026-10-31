@@ -5,7 +5,6 @@
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
 #include "hardware/pio.h"
-#include "hardware/pwm.h"
 #include "hardware/watchdog.h"
 #include "pico/stdlib.h"
 
@@ -80,24 +79,32 @@ const phy_trace_t *phy_trace(size_t *count) {
     return s_trace;
 }
 
-// Count CLK rising edges with the PWM slice for a short window.  Only odd GPIOs are B inputs of a PWM slice, so this is
-// a no-op for even CLK pins.
-static uint32_t measure_clk_pwm_hz(uint32_t window_us) {
-    if (!(ISO7816_PIN_CLK & 1)) return 0;
-    uint slice = pwm_gpio_to_slice_num(ISO7816_PIN_CLK);
-    pwm_config c = pwm_get_default_config();
-    pwm_config_set_clkdiv_mode(&c, PWM_DIV_B_RISING);
-    pwm_config_set_clkdiv_int(&c, 1);
-    pwm_config_set_wrap(&c, 0xFFFF);
-    gpio_set_function(ISO7816_PIN_CLK, GPIO_FUNC_PWM);
-    pwm_init(slice, &c, false);
-    pwm_set_counter(slice, 0);
-    pwm_set_enabled(slice, true);
+// Reader clock counter (`clkcount`), resident in pio1 because the card programs fill pio0.  `wait pin` reads the pad
+// input, so any CLK GPIO works and the pin function stays with pio0.
+static const PIO s_pio_cnt = pio1;
+static uint s_sm_cnt, s_off_cnt;
+static pio_sm_config s_cfg_cnt;
+
+static void clk_counter_init(void) {
+    s_off_cnt = pio_add_program(s_pio_cnt, &clkcount_program);
+    s_sm_cnt = (uint)pio_claim_unused_sm(s_pio_cnt, true);
+    s_cfg_cnt = clkcount_program_get_default_config(s_off_cnt);
+    sm_config_set_in_pins(&s_cfg_cnt, ISO7816_PIN_CLK);
+    sm_config_set_clkdiv_int_frac(&s_cfg_cnt, 1, 0);
+}
+
+// Count CLK rising edges for a short window: X starts at ~0 and the program decrements it per edge.
+static uint32_t measure_clk_hz(uint32_t window_us) {
+    pio_sm_init(s_pio_cnt, s_sm_cnt, s_off_cnt, &s_cfg_cnt);   // disabled, FIFOs cleared, PC at `top`
+    pio_sm_exec(s_pio_cnt, s_sm_cnt, pio_encode_mov_not(pio_x, pio_null));
+    pio_sm_set_enabled(s_pio_cnt, s_sm_cnt, true);
     busy_wait_us(window_us);
-    pwm_set_enabled(slice, false);
-    uint32_t count = pwm_get_counter(slice);
-    gpio_set_function(ISO7816_PIN_CLK, GPIO_FUNC_PIO0);
-    return (uint32_t)((uint64_t)count * 1000000ull / window_us);
+    pio_sm_set_enabled(s_pio_cnt, s_sm_cnt, false);
+    pio_sm_exec(s_pio_cnt, s_sm_cnt, pio_encode_mov(pio_isr, pio_x));
+    pio_sm_exec(s_pio_cnt, s_sm_cnt, pio_encode_push(false, false));
+    if (pio_sm_is_rx_fifo_empty(s_pio_cnt, s_sm_cnt)) return 0;
+    uint32_t edges = ~pio_sm_get(s_pio_cnt, s_sm_cnt);
+    return (uint32_t)((uint64_t)edges * 1000000ull / window_us);
 }
 
 // Rewrite every `wait gpio ISO7816_CLK_GPIO` of a loaded program to use another GPIO.  Instruction memory is
@@ -294,8 +301,9 @@ void phy_init(void) {
     s_off_rx = pio_add_program(s_pio, &iso7816_rx_program);
     s_off_tx = pio_add_program(s_pio, &iso7816_tx_program);
     patch_clk_gpio(ISO7816_PIN_CLK);
+    clk_counter_init();
 
-    s_cfg_rx = iso7816_rx_program_get_default_config(s_off_rx);
+    s_cfg_rx =iso7816_rx_program_get_default_config(s_off_rx);
     sm_config_set_in_pins(&s_cfg_rx, ISO7816_PIN_IO);
     sm_config_set_in_shift(&s_cfg_rx, true, false, 32);     // right, no autopush
     sm_config_set_fifo_join(&s_cfg_rx, PIO_FIFO_JOIN_RX);    // 8-deep RX FIFO
@@ -359,8 +367,8 @@ bool phy_start_session(const phy_params_t *p) {
     if (!s_ignore_reset) {
         // Diagnostic: hardware count of the reader's clock (0.5 ms window, well inside the 400..40000 clock budget
         // before the ATR has to start).
-        s_stats.dbg_clk_pwm_hz = measure_clk_pwm_hz(500);
-        if (s_stats.dbg_clk_pwm_hz > 100000) s_stats.clk_hz = s_stats.dbg_clk_pwm_hz;
+        s_stats.dbg_clk_counted_hz = measure_clk_hz(500);
+        if (s_stats.dbg_clk_counted_hz > 100000) s_stats.clk_hz = s_stats.dbg_clk_counted_hz;
     }
 
     // ISO 7816-3: the ATR must start between 400 and 40 000 clock cycles after RST rises; the primed frame of >= 12 ETU
@@ -473,10 +481,10 @@ bool phy_tx(const uint8_t *data, size_t len) {
                 s_first_echo_time = get_absolute_time();
                 s_first_echo_valid = true;
                 // First ATR character: echoed (frame + 9.5) ETU after the session start, a decent estimate of the clock
-                // if the PWM counter could not be used.
+                // if the clock counter could not be used.
                 int64_t dt = absolute_time_diff_us(s_session_t0, s_first_echo_time);
                 s_stats.dbg_delay_us = (uint32_t)dt;
-                if (dt > 0 && !s_stats.dbg_clk_pwm_hz) {
+                if (dt > 0 && !s_stats.dbg_clk_counted_hz) {
                     s_stats.clk_hz = (uint32_t)(((2ull * s_frame_bits + 19) * s_etu_clks / 2) *
                                                 1000000ull / (uint64_t)dt);
                 }
@@ -524,7 +532,7 @@ const phy_stats_t *phy_stats(void) { return &s_stats; }
 void phy_selftest(char *msg, size_t cap) {
     static const uint8_t atr[] = { 0x3B, 0x08, 'P', 'i', 'c', 'o', '7', '8', '1', '6' };
     PIO pio_clk = pio1;
-    const uint sm_clk = 0;
+    const uint sm_clk = (uint)pio_claim_unused_sm(pio_clk, true);   // the clock counter holds another one
 
     // Test clock generator on the other PIO block.
     uint off_clk = pio_add_program(pio_clk, &clkgen_program);
@@ -625,6 +633,7 @@ void phy_selftest(char *msg, size_t cap) {
     patch_clk_gpio(ISO7816_PIN_CLK);
     pio_sm_set_enabled(pio_clk, sm_clk, false);
     pio_remove_program(pio_clk, &clkgen_program, off_clk);
+    pio_sm_unclaim(pio_clk, sm_clk);
     gpio_set_function(SELFTEST_CLK_PIN, GPIO_FUNC_NULL);
     gpio_set_function(SELFTEST_IO_PIN, GPIO_FUNC_NULL);
 }

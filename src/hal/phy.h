@@ -44,7 +44,7 @@ typedef struct {
     uint32_t dbg_echo_index;   // index of first echo mismatch (or count if none)
     uint32_t dbg_echo_expected;
     uint32_t dbg_echo_got;     // raw 9-bit word
-    uint32_t dbg_clk_pwm_hz;   // CLK frequency counted by the PWM slice at RST rise
+    uint32_t dbg_clk_counted_hz; // CLK frequency counted by the PIO clock counter at RST rise
 } phy_stats_t;
 
 // Timestamped trace of the last session start (TX pushes and RX words).

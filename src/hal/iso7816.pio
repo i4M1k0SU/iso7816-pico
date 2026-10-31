@@ -99,3 +99,16 @@ delay:
     set pins, 1 [15]
     set pins, 0 [15]
 .wrap
+
+; ---------------------------------------------------------------------------
+; Clock counter: decrements X once per rising edge of IN pin 0 (the reader's CLK).  The CPU loads X = ~0, runs the state
+; machine for a fixed window and reads X back; edges = ~X.  Lives in pio1 next to clkgen.  `wait pin` reads the pad's
+; input, so this works on any GPIO while the pin function stays with pio0.
+; ---------------------------------------------------------------------------
+.program clkcount
+top:
+.wrap_target
+    wait 0 pin 0
+    wait 1 pin 0                      ; rising edge
+    jmp x-- top                       ; count it; taken or not, the next instruction is `top`
+.wrap

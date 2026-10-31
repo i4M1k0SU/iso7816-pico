@@ -162,8 +162,8 @@ static void print_status(void) {
                (unsigned long)st->rx_parity_errors, (unsigned long)st->tx_echo_errors,
                (unsigned long)st->tx_timeouts);
     log_printf("last ATR   : %s", st->last_error ? st->last_error : "ok");
-    log_printf("  first ATR echo %lu us after start; CLK by PWM counter %lu Hz",
-               (unsigned long)st->dbg_delay_us, (unsigned long)st->dbg_clk_pwm_hz);
+    log_printf("  first ATR echo %lu us after start; CLK by PIO counter %lu Hz",
+               (unsigned long)st->dbg_delay_us, (unsigned long)st->dbg_clk_counted_hz);
     log_printf("  first echo mismatch at byte %lu: expected %02lX got 0x%03lX",
                (unsigned long)st->dbg_echo_index, (unsigned long)st->dbg_echo_expected,
                (unsigned long)st->dbg_echo_got);
