@@ -120,6 +120,12 @@ typedef struct {
 // The profile.
 // ---------------------------------------------------------------------------
 typedef struct {
+    // --- identity ---------------------------------------------------------------
+    // Shown in the console banner and by the `card` command.  NULL falls back to the program name / version given
+    // to CMake (pico_set_program_name / pico_set_program_version).
+    const char *name;
+    const char *version;
+
     // --- ISO 7816-3 -----------------------------------------------------------
     const uint8_t *atr;             // raw ATR to send (e.g. copied from a real card) ...
     size_t atr_len;

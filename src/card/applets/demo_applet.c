@@ -15,7 +15,6 @@
 static const uint8_t s_aid[] = { 0xF0, 'P', 'I', 'C', 'O' };
 static uint32_t s_counter;
 
-#define VERSION_STRING "iso7816-pico 1.0 (PIO T=0/T=1)"
 
 // ---------------------------------------------------------------------------
 // life cycle
@@ -40,10 +39,15 @@ static uint16_t demo_select(const apdu_t *cmd, apdu_resp_t *resp) {
 // command handlers
 // ---------------------------------------------------------------------------
 
-// 80 10 00 00 Le  -> version string
+// 80 10 00 00 Le  -> "<name> <version>" from the card profile
 static uint16_t h_get_version(const apdu_t *cmd, apdu_resp_t *resp) {
     (void)cmd;
-    resp_put(resp, VERSION_STRING, strlen(VERSION_STRING));
+    const char *name = card_profile.name ? card_profile.name : "iso7816-pico";
+    resp_put(resp, name, strlen(name));
+    if (card_profile.version) {
+        resp_put_u8(resp, ' ');
+        resp_put(resp, card_profile.version, strlen(card_profile.version));
+    }
     return SW_OK;
 }
 

@@ -156,8 +156,23 @@ static void print_status(void) {
                (unsigned long)st->dbg_echo_got);
 }
 
+#ifndef PICO_PROGRAM_NAME
+#define PICO_PROGRAM_NAME "iso7816-pico"
+#endif
+#ifndef PICO_PROGRAM_VERSION_STRING
+#define PICO_PROGRAM_VERSION_STRING ""
+#endif
+
+// "<name> <version>" from the card profile, or from CMake when the profile leaves them NULL.
+static void print_identity(void) {
+    const char *name = card_profile.name ? card_profile.name : PICO_PROGRAM_NAME;
+    const char *version = card_profile.version ? card_profile.version : PICO_PROGRAM_VERSION_STRING;
+    log_printf("=== %s%s%s ===", name, *version ? " " : "", version);
+}
+
 static void print_card(void) {
     size_t n;
+    print_identity();
     const uint8_t *atr = session_atr(&n);
     char hex[3 * ATR_MAX_LEN + 1];
     strbuf_t sb = { hex, sizeof hex, 0 };
@@ -443,7 +458,8 @@ void console_poll(void) {
     bool connected = stdio_usb_connected();
     if (connected && !was_connected) {
         log_printf("%s", "");
-        log_printf("=== iso7816-pico: ISO 7816 smart card framework (RP2040 PIO) ===");
+        print_identity();
+        log_printf("iso7816-pico: ISO 7816 smart card framework");
         cmd_help(NULL);
         s_line_len = 0;
     }

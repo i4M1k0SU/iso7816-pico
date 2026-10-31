@@ -219,6 +219,10 @@ static const console_cmd_t s_console_cmds[] = {
 // ----------------------------------------------------------------------------
 
 const card_profile_t card_profile = {
+    // identity (console banner, `card` command, the demo's GET VERSION)
+    .name = "Pico7816 demo",
+    .version = "1.0",
+
     // ISO 7816-3
     .atr = NULL, .atr_len = 0,          // raw ATR, or ...
     .atr_desc = &ATR_IN_USE,            // ... described ATR

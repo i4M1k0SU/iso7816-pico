@@ -130,6 +130,7 @@ const applet_t my_applet = {
 | `max_channels` | 論理チャネル数 (1..4) |
 | `proprietary_cla_decode` | CLA 8X..FX でもチャネル / チェイニング / SM bit を解釈するか。既定 false なので CLA 90 は「80 + チェイニング」ではなく別の CLA である |
 | `tx_extra_guard` | 自分の送信文字に付ける追加ガード ETU |
+| `name`, `version` | コンソール接続時のバナーと `card` コマンドに表示する名前と版。NULL なら CMake の `pico_set_program_name` / `pico_set_program_version` の値 |
 
 ## 8. コンソールコマンド
 
