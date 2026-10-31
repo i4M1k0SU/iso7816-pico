@@ -1,4 +1,4 @@
-// ISO 7816-3 physical / character layer on top of the RP2040 PIO programs.
+// ISO 7816-3 physical / character layer on top of the RP2040 / RP2350 PIO programs.
 //
 //   - open-drain I/O, ETU timing derived from the reader's clock
 //   - direct and inverse convention

@@ -118,7 +118,7 @@ const applet_t my_applet = {
 | `manage_security_environment`, `perform_security_operation`, `generate_asymmetric_key_pair` | 00 22 / 00 2A / 00 46 (ISO 7816-8) | 6A81 |
 | `create_file`, `delete_file` | 00 E0 / 00 E4 (ISO 7816-9) | 6A81 |
 | `sm_unwrap`, `sm_wrap` | CLA のセキュアメッセージング bit が立ったコマンドの前後 | 6882 |
-| `random_bytes` | GET CHALLENGE 等 | RP2040 のハードウェア乱数 |
+| `random_bytes` | GET CHALLENGE 等 | RP2040 / RP2350 のハードウェア乱数 |
 
 暗号が必要なら pico-sdk 同梱の mbedtls (`pico_mbedtls`) をリンクしてフックの中で使用する。
 

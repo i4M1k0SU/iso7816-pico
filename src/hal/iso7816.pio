@@ -1,5 +1,5 @@
 ;
-; ISO 7816-3 card-side character I/O for RP2040 PIO.
+; ISO 7816-3 card-side character I/O for RP2040 / RP2350 PIO.
 ;
 ; Both state machines derive all timing from the *external* card clock (contact C3) by counting its edges with `wait
 ; gpio`, so they work for any clock frequency the reader chooses and need no measurement of it.
