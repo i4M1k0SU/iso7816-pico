@@ -77,7 +77,9 @@ class Card:
         print(f"ATR    : {hexs(atr)}   ({name})")
 
     def close(self):
-        SCardDisconnect(self.card, SCARD_LEAVE_CARD)
+        # Reset the card on disconnect: the PC/SC layer otherwise keeps it powered and the next run continues the
+        # same session (security status kept, nothing written back to the card's NVM).
+        SCardDisconnect(self.card, SCARD_RESET_CARD)
         SCardReleaseContext(self.ctx)
 
     def transmit(self, apdu):

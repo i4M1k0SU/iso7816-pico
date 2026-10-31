@@ -273,6 +273,8 @@ try {
     }
 }
 finally {
-    [void][WinSCard]::SCardDisconnect($card, 0)
+    # Reset the card on disconnect: Windows otherwise keeps it powered and the next run continues the same session
+    # (security status kept, nothing written back to the card's NVM).
+    [void][WinSCard]::SCardDisconnect($card, 1 <# RESET_CARD #>)
     [void][WinSCard]::SCardReleaseContext($ctx)
 }
