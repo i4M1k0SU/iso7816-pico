@@ -87,10 +87,8 @@ void session_run(void) {
             if (!pps_handle(&p, s_info.protocols, card_profile.pps_accept, &r)) {
                 // Invalid / unsupported request: stay mute until the next reset.
                 log_printf("PPS failed, waiting for reset");
-                while (!phy_reset_pending()) {
-                    uint8_t junk;
-                    phy_rx(&junk, true);
-                }
+                uint8_t junk;
+                while (phy_rx(&junk, true)) {}
                 break;
             }
             p.f = r.f;
