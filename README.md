@@ -56,6 +56,7 @@ ISO 7816-3 (ATR / PPS / T=0 / T=1) と ISO 7816-4 (APDU / 論理チャネル / �
 ```
 
 Linux / macOS では `tools/flash.sh` と `tools/sc_test.py` (pyscard) が同じ役割を果たす。
+Pico なしで動くホスト側テスト (`tests/`) と GitHub Actions の CI もある。
 
 付属のデモカードは SCR3310 + Windows 11 で T=0、T=1、PPS (F/D=372/4) のすべてで `sc_test.ps1` の全項目が通る。
 詳細は [docs/tools.md](docs/tools.md) にある。

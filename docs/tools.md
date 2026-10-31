@@ -76,6 +76,22 @@ all checks passed
   論理チャネル (MANAGE CHANNEL とチャネルごとのセキュリティ状態)、拡張長 APDU (T=0: ENVELOPE 300 バイト、T=1: 1000 バイトの Lc/Le)。
 * NVM: セッション中に書き換えた EF や PIN カウンタが RST 解除後にフラッシュへ保存され、電源再投入後も残る。
 
+## ホスト側テスト
+
+`tests/` には Pico を使わずに PC 上で動くテストがある。`proto/` と `apdu/` の各層とデモカードをそのままホスト用にコンパイルし、
+PHY を偽物 (`tests/fake_phy.c`) に差し替えて、リーダー側の T=0 / T=1 モデル (`tests/reader_t0.c` / `reader_t1.c`) から駆動する。
+`sc_test` と同じ 67 項目を両プロトコルで実行するほか、実機では起こせない異常系 (T=1 の EDC 誤り・再送・RESYNCH・ABORT・
+ブロック途切れ・バッファ超過、T=0 の 6C 再発行・ENVELOPE の終端、PPS の拒否、チェイニングの不整合、チャネルの枯渇) を確認する。
+
+```sh
+cmake -S tests -B build-tests
+cmake --build build-tests
+ctest --test-dir build-tests --output-on-failure     # または build-tests/iso7816_tests -v (カードのログ付き)
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) は push ごとにこのテストと、Pico SDK を取得しての実機向けビルド (UF2 を成果物として保存) を実行する。
+使用する action はコミット SHA で固定している。
+
 ## コンソール (USB シリアル、115200 bps 任意)
 
 ATR や APDU のトレースが流れる。ログは専用リングバッファに溜めて空き時間にだけ送るので、
