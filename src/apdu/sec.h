@@ -16,6 +16,7 @@ typedef struct {
     uint8_t puk_max_retries;
     uint8_t puk_retries;
     bool disabled;                     // verification switched off (always verified)
+    uint8_t plain_len;                 // with hooks.pin_transform: fixed plaintext length of PIN and PUK
 } sec_pin_t;
 
 #define SEC_CHALLENGE_MAX 32

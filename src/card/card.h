@@ -91,6 +91,14 @@ typedef struct {
     // Wrap: replace resp (and possibly the SW) by the protected response.
     uint16_t (*sm_wrap)(const apdu_t *cmd, apdu_resp_t *resp, uint16_t sw);
 
+    // --- PIN storage ----------------------------------------------------------------------------------------------
+    // Transform reference data before it is stored (CHANGE REFERENCE DATA, RESET RETRY COUNTER) and before a
+    // candidate is compared (VERIFY, the PUK, ...), e.g. a salted hash so that no PIN sits in flash in clear.  Return
+    // the stored length (0 = reject).  The initial values in the profile must already be in the stored form, and
+    // sec_pin_t.plain_len must give the fixed plaintext length of the PIN and PUK (the commands that carry an old and
+    // a new value in one data field split them there).  NULL = store and compare the plain value.
+    size_t (*pin_transform)(const sec_pin_t *pin, const uint8_t *in, size_t len, uint8_t *out, size_t cap);
+
     // --- misc -----------------------------------------------------------------
     void (*random_bytes)(uint8_t *out, size_t n);   // default: hardware RNG
 } card_hooks_t;
