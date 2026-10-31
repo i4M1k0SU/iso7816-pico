@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include "hardware/gpio.h"
+#include "hardware/irq.h"
 #include "hardware/pio.h"
 #include "hardware/pwm.h"
 #include "hardware/watchdog.h"
@@ -127,8 +128,12 @@ uint32_t phy_etu_us(void) {
 // helpers
 // ---------------------------------------------------------------------------
 
-static void rst_irq(uint gpio, uint32_t events) {
-    if (gpio != ISO7816_PIN_RST) return;
+// Raw shared handler on IO_IRQ_BANK0: it only looks at (and acknowledges) the RST events, so other code can hook its
+// own GPIOs with gpio_add_raw_irq_handler() or gpio_set_irq_callback() next to it.
+static void rst_irq(void) {
+    uint32_t events = gpio_get_irq_event_mask(ISO7816_PIN_RST) & (GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE);
+    if (!events) return;
+    gpio_acknowledge_irq(ISO7816_PIN_RST, events);
     if (events & GPIO_IRQ_EDGE_FALL) {
         s_rst_fell = true;
         s_stats.rst_falls++;
@@ -270,8 +275,10 @@ void phy_init(void) {
     gpio_init(ISO7816_PIN_RST);
     gpio_set_dir(ISO7816_PIN_RST, GPIO_IN);
     gpio_pull_down(ISO7816_PIN_RST);
-    gpio_set_irq_enabled_with_callback(ISO7816_PIN_RST, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE,
-                                       true, rst_irq);
+    // Edge latch / counters through a raw shared handler: the SDK's single GPIO callback stays free for user code.
+    gpio_add_raw_irq_handler(ISO7816_PIN_RST, rst_irq);
+    gpio_set_irq_enabled(ISO7816_PIN_RST, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true);
+    irq_set_enabled(IO_IRQ_BANK0, true);
 
     // I/O: PIO-owned, open drain (output value 0, direction toggled), pulled up.
     pio_sm_set_pins_with_mask(s_pio, s_sm_tx, 0, 1u << ISO7816_PIN_IO);
