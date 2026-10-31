@@ -1,0 +1,31 @@
+# Matches the style used in src/ and tests/ (120 columns, 4-space indent, K&R braces).
+---
+Language: Cpp
+BasedOnStyle: LLVM
+ColumnLimit: 120
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Empty
+AllowShortCaseLabelsOnASingleLine: false
+AlignTrailingComments: true
+AlignConsecutiveMacros: AcrossEmptyLines
+AlignAfterOpenBracket: Align
+BinPackArguments: true
+BinPackParameters: true
+PointerAlignment: Right
+SpaceAfterCStyleCast: false
+SpacesBeforeTrailingComments: 1
+IndentCaseLabels: false
+SortIncludes: true
+IncludeBlocks: Preserve
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+ReflowComments: true
+Cpp11BracedListStyle: false
+SpaceBeforeParens: ControlStatements

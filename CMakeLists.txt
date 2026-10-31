@@ -71,7 +71,7 @@ pico_generate_pio_header(iso7816-pico ${CMAKE_CURRENT_LIST_DIR}/src/hal/iso7816.
 pico_enable_stdio_uart(iso7816-pico 0)
 pico_enable_stdio_usb(iso7816-pico 1)
 
-target_compile_options(iso7816-pico PRIVATE -Wall -Wextra)
+target_compile_options(iso7816-pico PRIVATE -Wall -Wextra -Werror)
 
 target_include_directories(iso7816-pico PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}/src
