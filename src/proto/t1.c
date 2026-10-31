@@ -32,8 +32,9 @@ static uint8_t s_nad_resp;        // NAD with the address nibbles swapped
 // Command being assembled from chained I-blocks.
 static uint32_t s_cmd_len;
 
-// Response being sent, possibly in several I-blocks.
-static uint8_t s_resp_bytes[APDU_BUF_SIZE + 2];
+// Response being sent, possibly in several I-blocks: data + SW1 SW2, in place in the dispatcher's response buffer.
+// Nothing else writes to that buffer until the next command is executed, and a new command abandons the chain anyway.
+static const uint8_t *s_resp;
 static uint32_t s_resp_len, s_resp_off;
 static bool s_tx_more;            // we are in the middle of a chained response
 
@@ -50,6 +51,7 @@ void t1_session_begin(const t1_config_t *cfg) {
     s_ns = s_nr = 0;
     s_ifsd = 32;
     s_cmd_len = 0;
+    s_resp = NULL;
     s_resp_len = s_resp_off = 0;
     s_tx_more = false;
     s_last_valid = false;
@@ -156,7 +158,7 @@ static bool send_next_i_block(void) {
     uint32_t n = remaining < s_ifsd ? remaining : s_ifsd;
     bool more = n < remaining;
     uint8_t pcb = (uint8_t)((s_ns ? PCB_I_NS : 0) | (more ? PCB_I_M : 0));
-    bool ok = send_block(pcb, &s_resp_bytes[s_resp_off], n, true);
+    bool ok = send_block(pcb, &s_resp[s_resp_off], n, true);
     s_resp_off += n;
     s_ns ^= 1;
     s_tx_more = more;
@@ -182,9 +184,10 @@ static bool execute_command(void) {
                  cmd.lc, resp.len ? resp.data : NULL, resp.len, sw);
     }
     s_cmd_len = 0;
-    memcpy(s_resp_bytes, resp.data, resp.len);
-    s_resp_bytes[resp.len] = (uint8_t)(sw >> 8);
-    s_resp_bytes[resp.len + 1] = (uint8_t)sw;
+    // resp.len <= APDU_BUF_SIZE: the SW goes into the two spare bytes after the data (see dispatch_resp_buf()).
+    resp.data[resp.len] = (uint8_t)(sw >> 8);
+    resp.data[resp.len + 1] = (uint8_t)sw;
+    s_resp = resp.data;
     s_resp_len = resp.len + 2;
     s_resp_off = 0;
     return send_next_i_block();

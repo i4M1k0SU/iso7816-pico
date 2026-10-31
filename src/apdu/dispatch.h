@@ -24,4 +24,7 @@ bool dispatch_ins_known(uint8_t ins);
 // Buffers owned by the dispatcher: the transports fill cmd_buf with the command data field and hand resp_buf to
 // dispatch_process().
 uint8_t *dispatch_cmd_buf(void);
+// The response buffer is APDU_BUF_SIZE + 2 bytes, but transports pass cap = APDU_BUF_SIZE to dispatch_process(): the
+// two spare bytes let a transport append SW1 SW2 right after the response data (T=1 sends data + SW from here).  The
+// contents stay valid until the next dispatch_process() call.
 uint8_t *dispatch_resp_buf(void);
