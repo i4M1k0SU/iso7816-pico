@@ -2,22 +2,31 @@
 
 ## ビルドと書き込み
 
-VS Code の Raspberry Pi Pico 拡張が入れた SDK 2.3.1 / GCC 15.2 / picotool 2.3.1 (`~/.pico-sdk`) を使用する。
+VS Code の Raspberry Pi Pico 拡張が入れた SDK / GCC / picotool (`~/.pico-sdk`) を使用する。
+Windows は PowerShell 版、Linux / macOS (と Git Bash) はシェル版を使う。
 
 ```powershell
 .\tools\flash.ps1            # cmake + ninja → picotool load -f -x
 .\tools\flash.ps1 -NoBuild   # 書き込みのみ
 ```
 
+```sh
+tools/flash.sh               # 同上 (PICO_SDK_ROOT で ~/.pico-sdk 以外も指定できる)
+tools/flash.sh --no-build    # 書き込みのみ
+```
+
+Linux では picotool が USB デバイスを開けるように、picotool 付属の udev ルール (`udev/99-picotool.rules`) を入れるか
+sudo で実行する。
+
 `picotool load -f` は、動作中のファームウェアの USB リセットインターフェイス経由で BOOTSEL に再起動させてから書き込むので、
 ボタン操作は不要である。
 
 ## BOOTSEL に入れる方法 (5 通り)
 
-1. `picotool reboot -f -u` または `tools\flash.ps1` (USB ベンダーリセットインターフェイス)
+1. `picotool reboot -f -u` または `tools\flash.ps1` / `tools/flash.sh` (USB ベンダーリセットインターフェイス)
 2. USB シリアル (COMx) を **1200 bps** で開いて閉じる (スクリプトでは「open failed」と出ることがあるが、その時点で BOOTSEL に入っている)
 3. USB シリアルコンソールで `b` を入力する
-4. PC/SC から APDU `80 E0 00 00 00` を送る (`tools\sc_test.ps1 -Bootsel`)
+4. PC/SC から APDU `80 E0 00 00 00` を送る (`tools\sc_test.ps1 -Bootsel` / `tools/sc_test.py --bootsel`)
 5. 動作中に基板の BOOTSEL ボタンを約 0.3 秒押す (リセット不要)
 
 さらに 3 秒のウォッチドッグを有効にしているので、ファームウェアが固まっても自動的に再起動する。
@@ -27,7 +36,8 @@ VS Code の Raspberry Pi Pico 拡張が入れた SDK 2.3.1 / GCC 15.2 / picotool
 
 ## PC/SC テスト
 
-追加ソフトは不要で、winscard.dll を直接呼ぶ。
+Windows 版 (`sc_test.ps1`) は追加ソフト不要で winscard.dll を直接呼ぶ。Python 版 (`sc_test.py`) は pyscard
+(`pip install pyscard`) を使い、Linux (pcsc-lite + pcscd)、macOS、Windows で同じ 67 項目を実行する。
 
 ```powershell
 .\tools\sc_test.ps1                              # デモカードを一通り検証 (プロトコルはリーダー任せ)
@@ -35,6 +45,14 @@ VS Code の Raspberry Pi Pico 拡張が入れた SDK 2.3.1 / GCC 15.2 / picotool
 .\tools\sc_test.ps1 -Apdu "80 10 00 00 00"       # 任意の APDU を 1 つ送る
 .\tools\sc_test.ps1 -Bootsel                     # 最後に BOOTSEL へ再起動
 .\tools\sc_test.ps1 -Reader "ACS"                # リーダー名の部分一致 (既定 SCR33)
+```
+
+```sh
+tools/sc_test.py                                 # 同上
+tools/sc_test.py --protocol T1
+tools/sc_test.py --apdu "80 10 00 00 00"
+tools/sc_test.py --bootsel
+tools/sc_test.py --reader "ACS"
 ```
 
 実行例 (SCR3310、Windows 11):
@@ -57,8 +75,6 @@ all checks passed
   固定長・可変長・サイクリックレコード、SEARCH RECORD、GET DATA、GET CHALLENGE + EXTERNAL/INTERNAL AUTHENTICATE フック、
   論理チャネル (MANAGE CHANNEL とチャネルごとのセキュリティ状態)、拡張長 APDU (T=0: ENVELOPE 300 バイト、T=1: 1000 バイトの Lc/Le)。
 * NVM: セッション中に書き換えた EF や PIN カウンタが RST 解除後にフラッシュへ保存され、電源再投入後も残る。
-
-Python を用い、 `pip install pyscard` で同様のことができる。
 
 ## コンソール (USB シリアル、115200 bps 任意)
 
