@@ -303,7 +303,7 @@ void phy_init(void) {
     patch_clk_gpio(ISO7816_PIN_CLK);
     clk_counter_init();
 
-    s_cfg_rx =iso7816_rx_program_get_default_config(s_off_rx);
+    s_cfg_rx = iso7816_rx_program_get_default_config(s_off_rx);
     sm_config_set_in_pins(&s_cfg_rx, ISO7816_PIN_IO);
     sm_config_set_in_shift(&s_cfg_rx, true, false, 32);     // right, no autopush
     sm_config_set_fifo_join(&s_cfg_rx, PIO_FIFO_JOIN_RX);    // 8-deep RX FIFO
