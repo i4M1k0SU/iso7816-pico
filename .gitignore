@@ -123,3 +123,5 @@ $RECYCLE.BIN/
 build
 .cache
 .serena
+
+build-tests
