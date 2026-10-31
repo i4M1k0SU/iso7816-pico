@@ -70,6 +70,7 @@ all checks passed
 
 * T=0 のみの ATR、T=1 のみの ATR、T=0/T=1 両対応 + TA1=13 の ATR の 3 種類。
   最後のものは Windows が PPS で **T=1, F/D=372/4 (ETU 19 µs)** に切り替え、その速度で全テストが通る。
+  特定モードの生 ATR `3B 90 13 10 00` (TA2、PPS なしで F/D=372/4) でも全テストが通る。
 * `sc_test.ps1` の 67 項目 (プロトコルごと): アプレットコマンド、2 秒かかるコマンドの keep-alive (NULL バイト / S(WTX))、
   透過 EF の READ/UPDATE/チェイニング、PIN の VERIFY/CHANGE/RESET RETRY (PUK)、SELECT (FID / 子 DF / 親 / パス / DF 名) と FCP、
   固定長・可変長・サイクリックレコード、SEARCH RECORD、GET DATA、GET CHALLENGE + EXTERNAL/INTERNAL AUTHENTICATE フック、
