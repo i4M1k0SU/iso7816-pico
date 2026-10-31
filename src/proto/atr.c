@@ -84,6 +84,7 @@ bool atr_parse(const uint8_t *atr, size_t len, atr_info_t *info) {
         } else if (level == 2) {
             if (has_ta) {
                 info->specific_mode = true;
+                info->specific_protocol = ta & 0xF;
                 if (!(ta & 0x10)) { /* F/D from TA1 */ } else { info->f = 372; info->d = 1; }
             }
             if (has_tc) info->wi = tc;

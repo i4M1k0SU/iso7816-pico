@@ -16,23 +16,26 @@ static size_t s_atr_len;
 static atr_info_t s_info;
 static uint8_t s_protocol;
 
-bool session_init(void) {
-    if (card_profile.atr && card_profile.atr_len) {
-        if (card_profile.atr_len > ATR_MAX_LEN) return false;
-        memcpy(s_atr, card_profile.atr, card_profile.atr_len);
-        s_atr_len = card_profile.atr_len;
-    } else if (card_profile.atr_desc) {
-        s_atr_len = atr_build(card_profile.atr_desc, s_atr, sizeof s_atr);
-    } else {
-        static const uint8_t fallback[] = { 0x3B, 0x00 };
-        memcpy(s_atr, fallback, sizeof fallback);
-        s_atr_len = sizeof fallback;
-    }
-    if (!s_atr_len || !atr_parse(s_atr, s_atr_len, &s_info)) {
+bool session_init_raw(const uint8_t *atr, size_t len) {
+    atr_info_t info;
+    if (!len || len > ATR_MAX_LEN || !atr_parse(atr, len, &info)) {
         log_printf("session: invalid ATR in card profile");
         return false;
     }
+    s_info = info;
+    memcpy(s_atr, atr, len);
+    s_atr_len = len;
     return true;
+}
+
+bool session_init(void) {
+    if (card_profile.atr && card_profile.atr_len) return session_init_raw(card_profile.atr, card_profile.atr_len);
+    if (card_profile.atr_desc) {
+        uint8_t built[ATR_MAX_LEN];
+        return session_init_raw(built, atr_build(card_profile.atr_desc, built, sizeof built));
+    }
+    static const uint8_t fallback[] = { 0x3B, 0x00 };
+    return session_init_raw(fallback, sizeof fallback);
 }
 
 const uint8_t *session_atr(size_t *len) {
@@ -56,7 +59,8 @@ void session_run(void) {
     phy_params_t p = PHY_PARAMS_DEFAULT;
     p.inverse = s_info.inverse;
     p.extra_guard = card_profile.tx_extra_guard;
-    s_protocol = s_info.first_protocol;
+    // Specific mode (TA2): the protocol is the one TA2 names, not necessarily the first TD.
+    s_protocol = s_info.specific_mode ? s_info.specific_protocol : s_info.first_protocol;
     set_protocol_params(&p, s_protocol);
 
     if (!phy_start_session(&p) || !phy_tx(s_atr, s_atr_len)) {
@@ -68,6 +72,21 @@ void session_run(void) {
     }
     log_printf("ATR sent, CLK ~ %lu Hz, T=%u%s", (unsigned long)phy_stats()->clk_hz, s_protocol,
                s_info.specific_mode ? " (specific mode)" : "");
+
+    // Specific mode has no PPS: the ATR goes out at the default F/D and the parameters it announces apply from the
+    // next character on.
+    if (s_info.specific_mode && (s_info.f != p.f || s_info.d != p.d)) {
+        p.f = s_info.f;
+        p.d = s_info.d;
+        if (!phy_apply_params(&p)) {
+            log_printf("specific mode: F=%u D=%u not supported, waiting for reset", (unsigned)s_info.f,
+                       (unsigned)s_info.d);
+            uint8_t junk;
+            while (phy_rx(&junk, true)) {}
+            return;
+        }
+        log_printf("specific mode: F=%u D=%u", (unsigned)s_info.f, (unsigned)s_info.d);
+    }
 
     dispatch_reset();
     if (card_profile.hooks.on_atr) card_profile.hooks.on_atr();

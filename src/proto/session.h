@@ -8,6 +8,10 @@
 // Prepare the ATR from the card profile (build or parse).  Logs it.
 bool session_init(void);
 
+// Use this raw ATR instead (session_init() ends here too).  Returns false and keeps the previous ATR if it does not
+// parse.
+bool session_init_raw(const uint8_t *atr, size_t len);
+
 const uint8_t *session_atr(size_t *len);
 
 // Called from the main loop when RST is high and no session is running. Returns when the session has ended (reset or

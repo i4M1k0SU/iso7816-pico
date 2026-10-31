@@ -80,7 +80,18 @@ void test_atr(void) {
     static const uint8_t specific[] = { 0x3B, 0x90, 0x11, 0x10, 0x00 };
     CHECK(atr_parse(specific, sizeof specific, &info));
     CHECK(info.specific_mode);
+    CHECK_EQ(info.specific_protocol, 0);
     CHECK_EQ(info.protocols, 0x0001);
+
+    // Specific mode for T=1 while TD1 offers T=0 first: 3B 90 13 90 01 01 13 (TA1 = 13, F/D = 372/4).
+    static const uint8_t specific_t1[] = { 0x3B, 0x90, 0x13, 0x90, 0x01, 0x01, 0x13 };
+    CHECK(atr_parse(specific_t1, sizeof specific_t1, &info));
+    CHECK(info.specific_mode);
+    CHECK_EQ(info.specific_protocol, 1);
+    CHECK_EQ(info.first_protocol, 0);
+    CHECK_EQ(info.protocols, 0x0003);
+    CHECK_EQ(info.f, 372);
+    CHECK_EQ(info.d, 4);
 
     // Broken ATRs.
     static const uint8_t bad_tck[] = { 0x3B, 0x88, 0x81, 0x31, 0xFE, 0x45, 'P', 'i', 'c', 'o', '7', '8', '1', '6',

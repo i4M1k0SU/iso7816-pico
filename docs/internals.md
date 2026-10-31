@@ -28,6 +28,7 @@
 
 1. RST High → `phy_start_session()` (既定 F/D、規約は ATR から) → ATR 送出。
 2. 最初の受信バイトが FF なら PPS。応答後に `phy_apply_params()` で F/D とプロトコルを切り替える。
+   ATR が特定モード (TA2 あり) なら PPS には応じず、ATR 送出の直後に `phy_apply_params()` で TA1 の F/D へ切り替える。
 3. `session.c` が T=0 (`t0.c`) または T=1 (`t1.c`) のコマンドループを回す。
 4. 両トランスポートは完全な APDU を組み立てて `dispatch_process()` に渡し、SW と応答データを受け取る。
 5. RST Low で `phy_enter_reset()`、NVM が dirty なら保存。
