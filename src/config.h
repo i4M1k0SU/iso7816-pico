@@ -34,9 +34,11 @@
 #define SEC_PIN_MAX_LEN   16
 
 // ---- Non-volatile memory ---------------------------------------------------------
-// Flash area (at the very end of the chip) used by hal/nvm.c to persist the card's data between power cycles.  Must be
-// a multiple of 4096.
-#define NVM_FLASH_BYTES   (8 * 1024)
+// Flash area (at the very end of the chip) used by hal/nvm.c to persist the card's data between power cycles.  It is
+// divided into slots of (header + blob) rounded up to 4 KB sectors and the slots are written in turn, so with a blob
+// under 4 KB these 64 KB give 16 slots, i.e. 16 times the erase endurance of a single sector.  Must be a multiple of
+// 4096.
+#define NVM_FLASH_BYTES   (64 * 1024)
 
 // ---- Misc ----------------------------------------------------------------------
 #define LOG_RING_SIZE     4096

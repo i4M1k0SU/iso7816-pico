@@ -1,4 +1,5 @@
-// Host replacements for the modules that touch Pico hardware: logging, NVM, card services, RNG.
+// Host replacements for the modules that touch Pico hardware: logging, card services, RNG.  (The NVM is the real
+// hal/nvm.c over the RAM port in fake_nvm.c.)
 #include "card/card.h"
 #include "hal/nvm.h"
 #include "proto/t0.h"
@@ -13,7 +14,6 @@
 
 bool g_verbose_log;
 uint8_t g_fake_protocol;
-static bool s_dirty;
 static bool s_bootsel;
 static uint32_t s_rand = 0x12345678u;
 
@@ -36,26 +36,6 @@ void log_apdu(const char *name, uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2
 }
 
 void log_drain(void) {}
-
-bool nvm_load(void *blob, size_t size) {
-    (void)blob;
-    (void)size;
-    return false;
-}
-
-bool nvm_save(const void *blob, size_t size) {
-    (void)blob;
-    (void)size;
-    return true;
-}
-
-void nvm_mark_dirty(void) { s_dirty = true; }
-
-bool nvm_take_dirty(void) {
-    bool d = s_dirty;
-    s_dirty = false;
-    return d;
-}
 
 // card/card.h services (sys/services.c is not compiled on the host).
 void card_keepalive(void) {

@@ -8,7 +8,6 @@
 #include "log.h"
 #include "proto/session.h"
 
-#include "hardware/flash.h"
 #include "hardware/watchdog.h"
 #include "pico/bootrom.h"
 #include "pico/stdio.h"
@@ -301,17 +300,17 @@ void console_poll(void) {
     }
     case 'n': case 'N':
         if (card_profile.nvm_blob) {
-            bool ok = nvm_save(card_profile.nvm_blob, card_profile.nvm_size);
-            log_printf("NVM save: %s", ok ? "ok" : "FAILED");
+            nvm_save_result_t r = nvm_save(card_profile.nvm_blob, card_profile.nvm_size);
+            log_printf("NVM save: %s (slot %lu, seq %lu)",
+                       r == NVM_SAVE_WRITTEN ? "ok" : r == NVM_SAVE_UNCHANGED ? "unchanged" : "FAILED",
+                       (unsigned long)nvm_status()->slot, (unsigned long)nvm_status()->seq);
         }
         break;
     case 'x': case 'X': {
         log_printf("erasing NVM and rebooting ...");
         log_drain();
         sleep_ms(50);
-        uint32_t ints = save_and_disable_interrupts();
-        flash_range_erase(PICO_FLASH_SIZE_BYTES - NVM_FLASH_BYTES, NVM_FLASH_BYTES);
-        restore_interrupts(ints);
+        nvm_erase_all();
         watchdog_reboot(0, 0, 0);
         break;
     }

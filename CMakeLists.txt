@@ -37,6 +37,7 @@ add_executable(iso7816-pico
         # framework: hardware
         src/hal/phy.c
         src/hal/nvm.c
+        src/hal/nvm_port.c
         src/hal/bootsel_button.c
         # framework: ISO 7816-3
         src/proto/atr.c

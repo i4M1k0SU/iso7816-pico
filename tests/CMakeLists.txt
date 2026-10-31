@@ -17,6 +17,7 @@ add_executable(iso7816_tests
         main.c
         fake_phy.c
         fakes.c
+        fake_nvm.c
         reader_t0.c
         reader_t1.c
         test_atr.c
@@ -27,6 +28,7 @@ add_executable(iso7816_tests
         test_t1.c
         test_dispatch.c
         test_fs.c
+        test_nvm.c
         test_card_suite.c
         # code under test
         ${SRC}/proto/atr.c
@@ -39,6 +41,7 @@ add_executable(iso7816_tests
         ${SRC}/apdu/fs.c
         ${SRC}/apdu/sec.c
         ${SRC}/apdu/iso_cmds.c
+        ${SRC}/hal/nvm.c
         ${SRC}/card/card_profile.c
         ${SRC}/card/applets/demo_applet.c
 )
