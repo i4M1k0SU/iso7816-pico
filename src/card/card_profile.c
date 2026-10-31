@@ -8,12 +8,15 @@
 //    4. PINs                               (ISO 7816-4 security)
 //    5. Applets                            (SELECT by AID)
 //    6. Hooks                              (GET DATA, authentication, SM ...)
-//    7. The profile itself
+//    7. Console commands
+//    8. The profile itself
 // ============================================================================
 #include "card.h"
 
 #include "applets/demo_applet.h"
+#include "sys/log.h"
 
+#include <stdio.h>
 #include <string.h>
 
 // ----------------------------------------------------------------------------
@@ -182,7 +185,37 @@ static uint16_t hook_external_authenticate(const apdu_t *cmd, apdu_resp_t *resp)
 }
 
 // ----------------------------------------------------------------------------
-// 7. The profile
+// 7. Console commands  (extra lines on the USB serial console; `help` lists them)
+// ----------------------------------------------------------------------------
+
+// `dump`: show what the demo card keeps in NVM.
+static void cmd_dump(const char *args) {
+    (void)args;
+    char hex[3 * 16 + 1] = "";
+    for (int i = 0; i < 16; i++) sprintf(hex + strlen(hex), i ? " %02X" : "%02X", s_nvm.ef_hello[i]);
+    log_printf("EF 0101[0..15]: %s", hex);
+    log_printf("EF 0103 (cyclic): %u record(s) in use", s_nvm.ef_log[0] | (s_nvm.ef_log[1] << 8));
+    for (size_t i = 0; i < 2; i++) {
+        log_printf("PIN %02X: %u/%u tries left%s", s_nvm.pins[i].ref, s_nvm.pins[i].retries,
+                   s_nvm.pins[i].max_retries, s_nvm.pins[i].disabled ? " (verification disabled)" : "");
+    }
+}
+
+// `unblock`: reset the PIN retry counters without the PUK (a development convenience; remove it from a real card).
+static void cmd_unblock(const char *args) {
+    (void)args;
+    for (size_t i = 0; i < 2; i++) s_nvm.pins[i].retries = s_nvm.pins[i].max_retries;
+    card_nvm_changed();
+    log_printf("PIN retry counters reset (saved after the next session)");
+}
+
+static const console_cmd_t s_console_cmds[] = {
+    { "dump",    "show the demo card's NVM (EF 0101, cyclic EF, PIN counters)", cmd_dump },
+    { "unblock", "reset the PIN retry counters",                              cmd_unblock },
+};
+
+// ----------------------------------------------------------------------------
+// 8. The profile
 // ----------------------------------------------------------------------------
 
 const card_profile_t card_profile = {
@@ -215,4 +248,8 @@ const card_profile_t card_profile = {
     // persistence
     .nvm_blob = &s_nvm,
     .nvm_size = sizeof s_nvm,
+
+    // console
+    .console_cmds = s_console_cmds,
+    .n_console_cmds = sizeof s_console_cmds / sizeof s_console_cmds[0],
 };

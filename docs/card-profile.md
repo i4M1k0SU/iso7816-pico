@@ -131,6 +131,29 @@ const applet_t my_applet = {
 | `proprietary_cla_decode` | CLA 8X..FX でもチャネル / チェイニング / SM bit を解釈するか。既定 false なので CLA 90 は「80 + チェイニング」ではなく別の CLA である |
 | `tx_extra_guard` | 自分の送信文字に付ける追加ガード ETU |
 
+## 8. コンソールコマンド
+
+USB シリアルコンソールに独自のコマンドを足せる。`console_cmd_t` の表 (名前、`help` で表示する説明、ハンドラ) を
+`.console_cmds` / `.n_console_cmds` に登録する。コンソールは「名前 引数...」の 1 行を Enter で受け取り、名前が一致した
+ハンドラに残りの文字列 (前後の空白を除いたもの、無ければ空文字列) を渡す。出力は `log_printf()` (`sys/log.h`) で行う。
+フレームワーク自身の名前 (help status card trace gpio pins apdu save erase bootsel reboot) が優先される。
+ハンドラはアイドルループ、すなわちコマンドの合間やリーダー待ちの間に呼ばれるので、長く回る処理では
+`watchdog_update()` と `log_drain()` を挟む。
+
+```c
+static void cmd_counter(const char *args) {
+    if (*args) s_counter = strtoul(args, NULL, 0);        // "counter 42" sets it
+    log_printf("counter = %lu", (unsigned long)s_counter);
+}
+
+static const console_cmd_t s_console_cmds[] = {
+    { "counter", "[value]  show or set the demo counter", cmd_counter },
+};
+// card_profile: .console_cmds = s_console_cmds, .n_console_cmds = 1
+```
+
+デモカードは `dump` (NVM の内容) と `unblock` (PIN のリトライ回数を戻す) を定義している。
+
 ## ハンドラから使用できる API
 
 | 関数 | 用途 |

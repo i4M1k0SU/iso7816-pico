@@ -104,6 +104,19 @@ typedef struct {
 } card_hooks_t;
 
 // ---------------------------------------------------------------------------
+// Console command: a line "name [arguments]" typed on the USB serial console (src/sys/console.c) runs the handler
+// with the rest of the line (trimmed, possibly empty); it reports through log_printf() (sys/log.h).  The framework's
+// own names (help status card trace gpio pins apdu save erase bootsel reboot) take precedence.  Handlers run in the
+// idle loop, i.e. between commands and while the card waits for the reader; keep them short or call
+// watchdog_update() / log_drain() in long loops (see the `gpio` command for an example).
+// ---------------------------------------------------------------------------
+typedef struct {
+    const char *name;               // matched exactly (case-sensitive); up to 8 characters keep the help aligned
+    const char *help;               // one line for the `help` listing
+    void (*handler)(const char *args);
+} console_cmd_t;
+
+// ---------------------------------------------------------------------------
 // The profile.
 // ---------------------------------------------------------------------------
 typedef struct {
@@ -132,6 +145,10 @@ typedef struct {
     // --- persistence -----------------------------------------------------------
     void *nvm_blob;                 // RAM image saved to flash when marked dirty
     size_t nvm_size;
+
+    // --- console ---------------------------------------------------------------
+    const console_cmd_t *console_cmds;   // extra console commands (NULL = none)
+    size_t n_console_cmds;
 } card_profile_t;
 
 extern const card_profile_t card_profile;
