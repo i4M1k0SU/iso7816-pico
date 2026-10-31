@@ -38,6 +38,15 @@ RST が Low になった後に書き戻される。フラッシュ書き込み�
 EF の本体や `sec_pin_t` の配列はこの構造体の中に置く。構造体のサイズが変わると保存済みイメージは捨てられ、
 ソース上の初期値に戻る (コンソール `x` でも初期化できる)。
 
+書き戻しは次の規則で行う (`src/hal/nvm.c`)。
+
+* フラッシュ上のイメージと同じ内容なら書かない (VERIFY 成功のようにカウンタを減らして戻しただけの変更は無視される)。
+* 領域 (`NVM_FLASH_BYTES`、既定 64 KB) をスロット (ヘッダ + 構造体を 4 KB 単位に切り上げ) に分け、通し番号を付けて順繰りに書く。
+  消去するのは次のスロットだけなので、各セクタの消去回数はスロット数分の 1 になる (構造体が 4 KB 未満なら 16 分の 1)。
+* 起動時は通し番号が最大で CRC の正しいスロットを採用する。書き込み中に電源が落ちても直前のイメージが残る。
+* PC/SC のホストが切断時にカードをリセットしない場合 (Windows の `SCARD_LEAVE_CARD`) は RST が Low にならず書き戻しが起きない。
+  `tools/sc_test.*` は `SCARD_RESET_CARD` で切断する。
+
 ## 3. ファイルシステム
 
 `fs_file_t` の配列で木構造を定義する (`[0]` が MF、`parent` ポインタで親を指定)。
@@ -59,6 +68,12 @@ EF の本体や `sec_pin_t` の配列はこの構造体の中に置く。構造�
 VERIFY (20) / CHANGE REFERENCE DATA (24) / RESET RETRY COUNTER (2C) / ENABLE・DISABLE VERIFICATION (28/26)
 をそのまま使用できる。ハンドラからは `sec_is_verified(ch, ref)` / `sec_set_verified()` で参照・設定する
 (EXTERNAL AUTHENTICATE 成功時に PIN 相当の権限を与える、など)。
+
+PIN と PUK は既定では平文のまま NVM に置かれる。平文を残したくない場合は `hooks.pin_transform` を実装する。
+格納時 (CHANGE REFERENCE DATA、RESET RETRY COUNTER) と照合時 (VERIFY、PUK) の両方で値がこの関数を通るので、
+ソルト付きハッシュなどを返せばフラッシュには変換後の値しか残らない。その場合、プロファイルに書く初期値は変換後の形で、
+`sec_pin_t.plain_len` に PIN と PUK の平文長 (固定) を入れる (旧 PIN + 新 PIN のように 1 つのデータ欄に 2 つの値が入るコマンドを
+そこで分割する)。
 
 ## 5. アプレット
 
