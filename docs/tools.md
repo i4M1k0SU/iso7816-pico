@@ -60,7 +60,7 @@ tools/sc_test.py --reader "ACS"
 ```
 ATR    : 3B 08 50 69 63 6F 37 38 31 36   (T=0)
 [PASS] SELECT by AID                  00 A4 04 00 05 F0 50 49 43 4F  -> SW 9000 6F 07 84 05 F0 50 49 43 4F
-[PASS] GET VERSION                    80 10 00 00 00                 -> SW 9000 "iso7816-pico 1.0 (PIO T=0/T=1)"
+[PASS] GET VERSION                    80 10 00 00 00                 -> SW 9000 "Pico7816 demo 1.0"
 [PASS] ECHO 200 bytes                 80 20 00 00 C8 01 02 ...       -> SW 9000 01 02 ...
 ...
 all checks passed
