@@ -1,7 +1,10 @@
 # カードを開発する
 
-編集するのは [src/card/card_profile.c](../src/card/card_profile.c) と `src/card/applets/` だけである。
-型と各フィールドの説明は [src/card/card.h](../src/card/card.h) にある。
+利用側が書くのはカードプロファイル (`card_profile_t` を 1 つ) とアプレット、そして `card_runtime_init()` に
+プロファイルを渡す `main.c` である ([embedding.md](embedding.md))。雛形は
+[examples/demo/card_profile.c](../examples/demo/card_profile.c) と
+[examples/demo/applets/demo_applet.c](../examples/demo/applets/demo_applet.c)、
+型と各フィールドの説明は [include/iso7816_pico/card.h](../include/iso7816_pico/card.h) にある。
 
 ## 1. ATR (ISO 7816-3)
 
@@ -38,7 +41,7 @@ RST が Low になった後に書き戻される。フラッシュ書き込み�
 EF の本体や `sec_pin_t` の配列はこの構造体の中に置く。構造体のサイズが変わると保存済みイメージは捨てられ、
 ソース上の初期値に戻る (コンソール `x` でも初期化できる)。
 
-書き戻しは次の規則で行う (`src/hal/nvm.c`)。
+書き戻しは次の規則で行う (`src/core/hal/nvm.c`)。
 
 * フラッシュ上のイメージと同じ内容なら書かない (VERIFY 成功のようにカウンタを減らして戻しただけの変更は無視される)。
 * 領域 (`NVM_FLASH_BYTES`、既定 64 KB) をスロット (ヘッダ + 構造体を 4 KB 単位に切り上げ) に分け、通し番号を付けて順繰りに書く。

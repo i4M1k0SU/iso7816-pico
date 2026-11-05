@@ -15,6 +15,10 @@ tools/flash.sh               # 同上 (PICO_SDK_ROOT で ~/.pico-sdk 以外も�
 tools/flash.sh --no-build    # 書き込みのみ
 ```
 
+どちらもリポジトリ単独のビルド (`examples/demo` → `build/examples/demo/iso7816-pico-demo.uf2`) を書き込む。
+Pico 2 向けは `cmake -S . -B build-pico2 -G Ninja -DPICO_BOARD=pico2` で別ディレクトリに構成する (コンパイルのみ確認済み、
+実機は未検証)。利用側プロジェクトからの使い方は [embedding.md](embedding.md)。
+
 Linux では picotool が USB デバイスを開けるように、picotool 付属の udev ルール (`udev/99-picotool.rules`) を入れるか
 sudo で実行する。
 
@@ -66,7 +70,7 @@ ATR    : 3B 08 50 69 63 6F 37 38 31 36   (T=0)
 all checks passed
 ```
 
-付属のデモカード (`src/card/card_profile.c`) で確認済みの内容:
+付属のデモカード (`examples/demo/card_profile.c`) で確認済みの内容:
 
 * T=0 のみの ATR、T=1 のみの ATR、T=0/T=1 両対応 + TA1=13 の ATR の 3 種類。
   最後のものは Windows が PPS で **T=1, F/D=372/4 (ETU 19 µs)** に切り替え、その速度で全テストが通る。
@@ -90,7 +94,8 @@ cmake --build build-tests
 ctest --test-dir build-tests --output-on-failure     # または build-tests/iso7816_tests -v (カードのログ付き)
 ```
 
-GitHub Actions (`.github/workflows/ci.yml`) は push ごとにこのテストと、Pico SDK を取得しての実機向けビルド (UF2 を成果物として保存) を実行する。
+GitHub Actions (`.github/workflows/ci.yml`) は push ごとにこのテストと、Pico SDK を取得しての実機向けビルド (Pico と Pico 2、
+UF2 を成果物として保存)、そして `tests/embed/` (submodule 利用側を模した最小プロジェクト) のビルドを実行する。
 使用する action はコミット SHA で固定している。
 
 ## コンソール (USB シリアル、115200 bps 任意)
