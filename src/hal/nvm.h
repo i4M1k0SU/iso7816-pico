@@ -1,7 +1,7 @@
 // Non-volatile storage for the card's persistent data (EF contents, PIN retry counters, keys ...) in the last
 // NVM_FLASH_BYTES of the flash.
 //
-// The card profile names one RAM blob (card_profile.nvm_blob / nvm_size); main() loads it at boot and writes it back
+// The card profile names one RAM blob (card_profile->nvm_blob / nvm_size); main() loads it at boot and writes it back
 // whenever something marked it dirty and the card is not in a session (RST low), so a flash write never delays a
 // command.
 //

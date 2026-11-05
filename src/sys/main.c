@@ -56,7 +56,10 @@ static void led(bool on) {
 #endif
 }
 
+extern const card_profile_t demo_card_profile;   // src/card/card_profile.c
+
 int main(void) {
+    card_profile = &demo_card_profile;
     stdio_init_all();
     console_init();
 
@@ -74,15 +77,15 @@ int main(void) {
     }
 
     // Card data: file system, PINs, persistent image.
-    if (card_profile.nvm_blob && card_profile.nvm_size) {
-        bool loaded = nvm_load(card_profile.nvm_blob, card_profile.nvm_size);
+    if (card_profile->nvm_blob && card_profile->nvm_size) {
+        bool loaded = nvm_load(card_profile->nvm_blob, card_profile->nvm_size);
         const nvm_status_t *st = nvm_status();
         log_printf("NVM: %s (%u bytes, slot %lu/%lu, seq %lu)", loaded ? "loaded from flash" : "defaults",
-                   (unsigned)card_profile.nvm_size, (unsigned long)st->slot, (unsigned long)st->slots,
+                   (unsigned)card_profile->nvm_size, (unsigned long)st->slot, (unsigned long)st->slots,
                    (unsigned long)st->seq);
     }
-    fs_init(card_profile.files, card_profile.n_files);
-    sec_init(card_profile.pins, card_profile.n_pins);
+    fs_init(card_profile->files, card_profile->n_files);
+    sec_init(card_profile->pins, card_profile->n_pins);
     session_init();
 
     // Only a watchdog *timeout* is a recovery; picotool and `r` also reboot through the watchdog but report
@@ -101,8 +104,8 @@ int main(void) {
 
         if (!phy_rst_high()) {
             need_fresh_reset = false;
-            if (nvm_take_dirty() && card_profile.nvm_blob) {
-                nvm_save_result_t r = nvm_save(card_profile.nvm_blob, card_profile.nvm_size);
+            if (nvm_take_dirty() && card_profile->nvm_blob) {
+                nvm_save_result_t r = nvm_save(card_profile->nvm_blob, card_profile->nvm_size);
                 const nvm_status_t *st = nvm_status();
                 log_printf("NVM: %s (slot %lu, seq %lu)",
                            r == NVM_SAVE_WRITTEN ? "saved" : r == NVM_SAVE_UNCHANGED ? "unchanged" : "save FAILED",
@@ -120,7 +123,7 @@ int main(void) {
         if (card_bootsel_requested()) enter_bootsel("requested by APDU");
 
         phy_enter_reset();
-        if (card_profile.hooks.on_deactivate) card_profile.hooks.on_deactivate();
+        if (card_profile->hooks.on_deactivate) card_profile->hooks.on_deactivate();
         need_fresh_reset = !ended_by_reset;
     }
 }

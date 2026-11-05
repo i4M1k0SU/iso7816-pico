@@ -1,5 +1,10 @@
 #include "apdu.h"
 
+#include "card/card.h"
+
+// Defined here so that every build that has the core (firmware and host tests) has exactly one copy.
+const card_profile_t *card_profile;
+
 size_t tlv_len_size(size_t n) { return n < 128 ? 1 : n < 256 ? 2 : 3; }
 
 void resp_put_tlv(apdu_resp_t *r, uint8_t tag, const void *val, size_t n) {

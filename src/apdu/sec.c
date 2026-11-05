@@ -65,8 +65,8 @@ const uint8_t *sec_last_challenge(size_t *len) {
 }
 
 void sec_random(uint8_t *out, size_t n) {
-    if (card_profile.hooks.random_bytes) {
-        card_profile.hooks.random_bytes(out, n);
+    if (card_profile->hooks.random_bytes) {
+        card_profile->hooks.random_bytes(out, n);
         return;
     }
     while (n) {
@@ -88,7 +88,7 @@ static bool equal(const uint8_t *a, const uint8_t *b, size_t n) {
 // Stored form of a value: the profile's pin_transform (e.g. a hash) or the value itself.  Returns the stored length,
 // 0 when the transform rejects it.
 static size_t stored_form(const sec_pin_t *p, const uint8_t *in, size_t len, uint8_t *out) {
-    if (card_profile.hooks.pin_transform) return card_profile.hooks.pin_transform(p, in, len, out, SEC_PIN_MAX_LEN);
+    if (card_profile->hooks.pin_transform) return card_profile->hooks.pin_transform(p, in, len, out, SEC_PIN_MAX_LEN);
     if (len > SEC_PIN_MAX_LEN) return 0;
     memcpy(out, in, len);
     return len;
@@ -96,7 +96,7 @@ static size_t stored_form(const sec_pin_t *p, const uint8_t *in, size_t len, uin
 
 // Plaintext length of the stored PIN / PUK, needed to split "old + new" data fields.
 static size_t plain_len(const sec_pin_t *p, size_t stored_len) {
-    return card_profile.hooks.pin_transform ? p->plain_len : stored_len;
+    return card_profile->hooks.pin_transform ? p->plain_len : stored_len;
 }
 
 // Compare a candidate with the stored PIN, maintaining the retry counter (decremented before the comparison so that
@@ -250,13 +250,13 @@ uint16_t sec_cmd_get_challenge(const apdu_t *cmd, apdu_resp_t *resp) {
 }
 
 uint16_t sec_cmd_external_authenticate(const apdu_t *cmd, apdu_resp_t *resp) {
-    if (!card_profile.hooks.external_authenticate) return SW_FUNC_NOT_SUPPORTED;
-    uint16_t sw = card_profile.hooks.external_authenticate(cmd, resp);
+    if (!card_profile->hooks.external_authenticate) return SW_FUNC_NOT_SUPPORTED;
+    uint16_t sw = card_profile->hooks.external_authenticate(cmd, resp);
     s_challenge_len = 0;                 // a challenge is good for one attempt
     return sw;
 }
 
 uint16_t sec_cmd_internal_authenticate(const apdu_t *cmd, apdu_resp_t *resp) {
-    if (!card_profile.hooks.internal_authenticate) return SW_FUNC_NOT_SUPPORTED;
-    return card_profile.hooks.internal_authenticate(cmd, resp);
+    if (!card_profile->hooks.internal_authenticate) return SW_FUNC_NOT_SUPPORTED;
+    return card_profile->hooks.internal_authenticate(cmd, resp);
 }

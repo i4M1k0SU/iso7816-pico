@@ -51,8 +51,10 @@ int main(int argc, char **argv) {
         if (strcmp(argv[i], "-v") == 0) g_verbose_log = true;
     }
     // What sys/main.c does at boot.
-    fs_init(card_profile.files, card_profile.n_files);
-    sec_init(card_profile.pins, card_profile.n_pins);
+    extern const card_profile_t demo_card_profile;
+    card_profile = &demo_card_profile;
+    fs_init(card_profile->files, card_profile->n_files);
+    sec_init(card_profile->pins, card_profile->n_pins);
 
     run_test("atr", test_atr);
     run_test("apdu", test_apdu);

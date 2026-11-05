@@ -29,10 +29,10 @@ bool session_init_raw(const uint8_t *atr, size_t len) {
 }
 
 bool session_init(void) {
-    if (card_profile.atr && card_profile.atr_len) return session_init_raw(card_profile.atr, card_profile.atr_len);
-    if (card_profile.atr_desc) {
+    if (card_profile->atr && card_profile->atr_len) return session_init_raw(card_profile->atr, card_profile->atr_len);
+    if (card_profile->atr_desc) {
         uint8_t built[ATR_MAX_LEN];
-        return session_init_raw(built, atr_build(card_profile.atr_desc, built, sizeof built));
+        return session_init_raw(built, atr_build(card_profile->atr_desc, built, sizeof built));
     }
     static const uint8_t fallback[] = { 0x3B, 0x00 };
     return session_init_raw(fallback, sizeof fallback);
@@ -58,7 +58,7 @@ void session_keepalive(void) {
 void session_run(void) {
     phy_params_t p = PHY_PARAMS_DEFAULT;
     p.inverse = s_info.inverse;
-    p.extra_guard = card_profile.tx_extra_guard;
+    p.extra_guard = card_profile->tx_extra_guard;
     // Specific mode (TA2): the protocol is the one TA2 names, not necessarily the first TD.
     s_protocol = s_info.specific_mode ? s_info.specific_protocol : s_info.first_protocol;
     set_protocol_params(&p, s_protocol);
@@ -89,12 +89,12 @@ void session_run(void) {
     }
 
     dispatch_reset();
-    if (card_profile.hooks.on_atr) card_profile.hooks.on_atr();
+    if (card_profile->hooks.on_atr) card_profile->hooks.on_atr();
     t0_session_begin();
     t1_config_t t1c = { s_info.ifsc, s_info.crc };
     t1_session_begin(&t1c);
 
-    bool pps_allowed = card_profile.allow_pps && !s_info.specific_mode;
+    bool pps_allowed = card_profile->allow_pps && !s_info.specific_mode;
     bool first = true;
 
     for (;;) {
@@ -103,7 +103,7 @@ void session_run(void) {
 
         if (b == 0xFF && first && pps_allowed) {
             pps_result_t r;
-            if (!pps_handle(&p, s_info.protocols, card_profile.pps_accept, &r)) {
+            if (!pps_handle(&p, s_info.protocols, card_profile->pps_accept, &r)) {
                 // Invalid / unsupported request: stay mute until the next reset.
                 log_printf("PPS failed, waiting for reset");
                 uint8_t junk;

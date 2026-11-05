@@ -103,7 +103,7 @@ void fs_select_file(uint8_t ch, const fs_file_t *f) {
         c->ef = f;
     }
     c->record = 0;
-    if (card_profile.hooks.on_select) card_profile.hooks.on_select(ch, f);
+    if (card_profile->hooks.on_select) card_profile->hooks.on_select(ch, f);
 }
 
 // ---------------------------------------------------------------------------
@@ -250,13 +250,13 @@ void fs_put_fcp(apdu_resp_t *resp, const fs_file_t *f, uint8_t template_tag) {
 // ---------------------------------------------------------------------------
 
 bool fs_access_ok(uint8_t ch, const fs_file_t *f, uint8_t op) {
-    if (card_profile.hooks.check_access) return card_profile.hooks.check_access(ch, f, op);
+    if (card_profile->hooks.check_access) return card_profile->hooks.check_access(ch, f, op);
     return sec_access_ok(ch, op == FS_OP_READ ? f->ac_read : f->ac_update);
 }
 
 static void file_changed(const fs_file_t *f) {
     nvm_mark_dirty();
-    if (card_profile.hooks.on_file_changed) card_profile.hooks.on_file_changed(f);
+    if (card_profile->hooks.on_file_changed) card_profile->hooks.on_file_changed(f);
 }
 
 // Resolve the EF a BINARY command refers to (short EF id in P1 or current).

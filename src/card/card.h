@@ -157,7 +157,8 @@ typedef struct {
     size_t n_console_cmds;
 } card_profile_t;
 
-extern const card_profile_t card_profile;
+// The profile in use.  Set by the runtime (card_runtime_init) or, on the host, by the tests before anything else runs.
+extern const card_profile_t *card_profile;
 
 // ---------------------------------------------------------------------------
 // Services for handlers.

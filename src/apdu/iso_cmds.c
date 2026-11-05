@@ -8,8 +8,8 @@
 // supported" when the profile provides no implementation.
 #define HOOK_HANDLER(fn, member)                                                   \
     static uint16_t fn(const apdu_t *cmd, apdu_resp_t *resp) {                    \
-        if (!card_profile.hooks.member) return SW_FUNC_NOT_SUPPORTED;             \
-        return card_profile.hooks.member(cmd, resp);                              \
+        if (!card_profile->hooks.member) return SW_FUNC_NOT_SUPPORTED;             \
+        return card_profile->hooks.member(cmd, resp);                              \
     }
 
 HOOK_HANDLER(h_get_data, get_data)

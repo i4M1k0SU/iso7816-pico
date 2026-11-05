@@ -2,7 +2,7 @@
 //  Example applet: shows how an application plugs into the framework.
 //
 //  Copy this file to start your own applet, give it an AID, list its
-//  commands in the table at the bottom and add it to card_profile.applets.
+//  commands in the table at the bottom and add it to card_profile->applets.
 // ============================================================================
 #include "demo_applet.h"
 
@@ -42,11 +42,11 @@ static uint16_t demo_select(const apdu_t *cmd, apdu_resp_t *resp) {
 // 80 10 00 00 Le  -> "<name> <version>" from the card profile
 static uint16_t h_get_version(const apdu_t *cmd, apdu_resp_t *resp) {
     (void)cmd;
-    const char *name = card_profile.name ? card_profile.name : "iso7816-pico";
+    const char *name = card_profile->name ? card_profile->name : "iso7816-pico";
     resp_put(resp, name, strlen(name));
-    if (card_profile.version) {
+    if (card_profile->version) {
         resp_put_u8(resp, ' ');
-        resp_put(resp, card_profile.version, strlen(card_profile.version));
+        resp_put(resp, card_profile->version, strlen(card_profile->version));
     }
     return SW_OK;
 }

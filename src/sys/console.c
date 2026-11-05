@@ -165,8 +165,8 @@ static void print_status(void) {
 
 // "<name> <version>" from the card profile, or from CMake when the profile leaves them NULL.
 static void print_identity(void) {
-    const char *name = card_profile.name ? card_profile.name : PICO_PROGRAM_NAME;
-    const char *version = card_profile.version ? card_profile.version : PICO_PROGRAM_VERSION_STRING;
+    const char *name = card_profile->name ? card_profile->name : PICO_PROGRAM_NAME;
+    const char *version = card_profile->version ? card_profile->version : PICO_PROGRAM_VERSION_STRING;
     log_printf("=== %s%s%s ===", name, *version ? " " : "", version);
 }
 
@@ -179,33 +179,33 @@ static void print_card(void) {
     hex[0] = 0;
     sb_hex(&sb, atr, n, n);
     log_printf("ATR        : %s", hex);
-    log_printf("PPS        : %s", card_profile.allow_pps ? "allowed" : "refused");
-    log_printf("channels   : %u, ISO commands %s", card_profile.max_channels,
-               card_profile.iso_commands ? "on" : "off");
-    log_printf("applets    : %u", (unsigned)card_profile.n_applets);
-    for (size_t i = 0; i < card_profile.n_applets; i++) {
-        const applet_t *a = card_profile.applets[i];
+    log_printf("PPS        : %s", card_profile->allow_pps ? "allowed" : "refused");
+    log_printf("channels   : %u, ISO commands %s", card_profile->max_channels,
+               card_profile->iso_commands ? "on" : "off");
+    log_printf("applets    : %u", (unsigned)card_profile->n_applets);
+    for (size_t i = 0; i < card_profile->n_applets; i++) {
+        const applet_t *a = card_profile->applets[i];
         char aid[3 * 16 + 1];
         strbuf_t s2 = { aid, sizeof aid, 0 };
         aid[0] = 0;
         sb_hex(&s2, a->aid, a->aid_len, 16);
         log_printf("  %-12s AID %s, %u commands", a->name ? a->name : "?", aid, (unsigned)a->n_cmds);
     }
-    log_printf("files      : %u", (unsigned)card_profile.n_files);
-    for (size_t i = 0; i < card_profile.n_files; i++) {
-        const fs_file_t *f = &card_profile.files[i];
+    log_printf("files      : %u", (unsigned)card_profile->n_files);
+    for (size_t i = 0; i < card_profile->n_files; i++) {
+        const fs_file_t *f = &card_profile->files[i];
         log_printf("  %04X type %02X parent %04X size %lu rec %u sfi %u ac %02X/%02X", f->fid, f->type,
                    f->parent ? f->parent->fid : 0, (unsigned long)f->size, f->rec_size, f->sfi,
                    f->ac_read, f->ac_update);
     }
-    log_printf("PINs       : %u", (unsigned)card_profile.n_pins);
-    for (size_t i = 0; i < card_profile.n_pins; i++) {
-        const sec_pin_t *p = &card_profile.pins[i];
+    log_printf("PINs       : %u", (unsigned)card_profile->n_pins);
+    for (size_t i = 0; i < card_profile->n_pins; i++) {
+        const sec_pin_t *p = &card_profile->pins[i];
         log_printf("  ref %02X len %u retries %u/%u%s", p->ref, p->len, p->retries, p->max_retries,
                    p->disabled ? " (disabled)" : "");
     }
-    log_printf("NVM        : %u bytes%s", (unsigned)card_profile.nvm_size,
-               card_profile.nvm_blob ? "" : " (none)");
+    log_printf("NVM        : %u bytes%s", (unsigned)card_profile->nvm_size,
+               card_profile->nvm_blob ? "" : " (none)");
 }
 
 static void cmd_help(const char *args);
@@ -349,11 +349,11 @@ static void cmd_apdu(const char *args) {
 
 static void cmd_save(const char *args) {
     (void)args;
-    if (!card_profile.nvm_blob) {
+    if (!card_profile->nvm_blob) {
         log_printf("this profile has no NVM blob");
         return;
     }
-    nvm_save_result_t r = nvm_save(card_profile.nvm_blob, card_profile.nvm_size);
+    nvm_save_result_t r = nvm_save(card_profile->nvm_blob, card_profile->nvm_size);
     log_printf("NVM save: %s (slot %lu, seq %lu)",
                r == NVM_SAVE_WRITTEN ? "ok" : r == NVM_SAVE_UNCHANGED ? "unchanged" : "FAILED",
                (unsigned long)nvm_status()->slot, (unsigned long)nvm_status()->seq);
@@ -404,8 +404,8 @@ static void cmd_help(const char *args) {
     for (size_t i = 0; i < sizeof s_builtin / sizeof s_builtin[0]; i++) {
         log_printf("  %-8s %s", s_builtin[i].name, s_builtin[i].help);
     }
-    for (size_t i = 0; i < card_profile.n_console_cmds; i++) {
-        const console_cmd_t *cmd = &card_profile.console_cmds[i];
+    for (size_t i = 0; i < card_profile->n_console_cmds; i++) {
+        const console_cmd_t *cmd = &card_profile->console_cmds[i];
         log_printf("  %-8s %s", cmd->name, cmd->help ? cmd->help : "");
     }
 }
@@ -415,8 +415,8 @@ static const console_cmd_t *find_command(const char *name) {
     for (size_t i = 0; i < sizeof s_builtin / sizeof s_builtin[0]; i++) {
         if (strcmp(s_builtin[i].name, name) == 0) return &s_builtin[i];
     }
-    for (size_t i = 0; i < card_profile.n_console_cmds; i++) {
-        const console_cmd_t *cmd = &card_profile.console_cmds[i];
+    for (size_t i = 0; i < card_profile->n_console_cmds; i++) {
+        const console_cmd_t *cmd = &card_profile->console_cmds[i];
         if (cmd->name && cmd->handler && strcmp(cmd->name, name) == 0) return cmd;
     }
     return NULL;

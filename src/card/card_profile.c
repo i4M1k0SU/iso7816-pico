@@ -9,7 +9,7 @@
 //    5. Applets                            (SELECT by AID)
 //    6. Hooks                              (GET DATA, authentication, SM ...)
 //    7. Console commands
-//    8. The profile itself
+//    8. The profile itself (demo_card_profile, handed to the framework by main.c)
 // ============================================================================
 #include "card.h"
 
@@ -218,7 +218,7 @@ static const console_cmd_t s_console_cmds[] = {
 // 8. The profile
 // ----------------------------------------------------------------------------
 
-const card_profile_t card_profile = {
+const card_profile_t demo_card_profile = {
     // identity (console banner, `card` command, the demo's GET VERSION)
     .name = "Pico7816 demo",
     .version = "1.0",
