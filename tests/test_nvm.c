@@ -1,4 +1,4 @@
-#include "config.h"
+#include "iso7816_pico/config.h"
 #include "fake_nvm.h"
 #include "hal/nvm.h"
 #include "test.h"

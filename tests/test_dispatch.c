@@ -1,5 +1,5 @@
 #include "apdu/dispatch.h"
-#include "apdu/sec.h"
+#include "iso7816_pico/sec.h"
 #include "fake_phy.h"
 #include "fakes.h"
 #include "proto/t0.h"

@@ -1,10 +1,10 @@
 // Host replacements for the modules that touch Pico hardware: logging, card services, RNG.  (The NVM is the real
 // hal/nvm.c over the RAM port in fake_nvm.c.)
-#include "card/card.h"
+#include "iso7816_pico/card.h"
 #include "hal/nvm.h"
 #include "proto/t0.h"
 #include "proto/t1.h"
-#include "sys/log.h"
+#include "iso7816_pico/log.h"
 
 #include "fakes.h"
 

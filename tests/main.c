@@ -1,8 +1,8 @@
 #include "test.h"
 
-#include "apdu/fs.h"
-#include "apdu/sec.h"
-#include "card/card.h"
+#include "iso7816_pico/fs.h"
+#include "iso7816_pico/sec.h"
+#include "iso7816_pico/card.h"
 #include "fakes.h"
 
 #include <stdlib.h>

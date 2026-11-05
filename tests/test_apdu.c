@@ -1,4 +1,4 @@
-#include "apdu/apdu.h"
+#include "iso7816_pico/apdu.h"
 #include "test.h"
 
 static bool decode(const char *hex, apdu_t *a) {

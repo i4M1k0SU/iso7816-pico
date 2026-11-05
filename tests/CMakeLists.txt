@@ -1,5 +1,5 @@
-# Host-side tests: the protocol and APDU layers compiled for the build machine against a fake PHY, driven by
-# reader-side models of T=0 and T=1.  Nothing here needs the Pico SDK.
+# Host-side tests: the framework core compiled for the build machine against a fake PHY and a RAM-backed NVM,
+# driven by reader-side models of T=0 and T=1.  Nothing here needs the Pico SDK.
 #
 #   cmake -S tests -B build-tests && cmake --build build-tests && ctest --test-dir build-tests --output-on-failure
 cmake_minimum_required(VERSION 3.16)
@@ -11,13 +11,14 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
 endif()
 
-set(SRC ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+set(ISO7816_PICO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
+include(${ISO7816_PICO_ROOT}/cmake/core_sources.cmake)
 
 add_executable(iso7816_tests
         main.c
         fake_phy.c
-        fakes.c
         fake_nvm.c
+        fakes.c
         reader_t0.c
         reader_t1.c
         test_atr.c
@@ -31,25 +32,17 @@ add_executable(iso7816_tests
         test_nvm.c
         test_card_suite.c
         # code under test
-        ${SRC}/proto/atr.c
-        ${SRC}/proto/pps.c
-        ${SRC}/proto/t0.c
-        ${SRC}/proto/t1.c
-        ${SRC}/proto/session.c
-        ${SRC}/apdu/apdu.c
-        ${SRC}/apdu/dispatch.c
-        ${SRC}/apdu/fs.c
-        ${SRC}/apdu/sec.c
-        ${SRC}/apdu/iso_cmds.c
-        ${SRC}/hal/nvm.c
-        ${SRC}/card/card_profile.c
-        ${SRC}/card/applets/demo_applet.c
+        ${ISO7816_PICO_CORE_SOURCES}
+        # the demo card is the test subject
+        ${ISO7816_PICO_ROOT}/examples/demo/card_profile.c
+        ${ISO7816_PICO_ROOT}/examples/demo/applets/demo_applet.c
 )
 
 target_include_directories(iso7816_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/stubs
-        ${SRC}
+        ${ISO7816_PICO_ROOT}/include
+        ${ISO7816_PICO_ROOT}/src/core
 )
 
 target_compile_options(iso7816_tests PRIVATE -Wall -Wextra -Werror)
