@@ -137,6 +137,8 @@ submodule として置いた場合は submodule が指しているコミット�
 - フレームワークの版は `include/iso7816_pico/version.h` の `ISO7816_PICO_VERSION_MAJOR` / `_MINOR` /
   `_STRING` と `card_framework_version()` で参照できる (アプレットの GET VERSION 応答に含めるなど)。CMake からは
   `add_subdirectory()` の後で変数 `ISO7816_PICO_VERSION` (`1.0`) として読める。
+- リリースのタグはこの版と一致する `vMAJOR.MINOR` (`v1.0` など) である。submodule はこのタグを指せばよい
+  (手順は [tools.md](tools.md#リリース))。
 
 ## 6. FetchContent を使う場合
 
