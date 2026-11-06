@@ -148,3 +148,16 @@ ATR や APDU のトレースが流れる。ログは専用リングバッファ�
 40000 クロック後に RST High、非活性化では RST が先に Low) から各接点のピンを特定できる。配線を変えたときはこれで確認する。
 `gpio` はセッション中は拒否されるので、リーダーの接続を開く前に入力し、15 秒以内に活性化させる (監視中のカードは
 ATR を返さない)。
+
+## コードの整形
+
+C のソースとヘッダはリポジトリの `.clang-format` (clang-format 18.1.8) に従う。CI の `clang-format` ジョブが
+`clang-format --dry-run -Werror` で全ファイルを検査するので、コミット前に整形しておく。
+
+```sh
+pip install clang-format==18.1.8
+git ls-files '*.c' '*.h' | xargs clang-format -i --style=file
+```
+
+手で揃えた表 (デモのファイル表など) は `// clang-format off` と `// clang-format on` で囲んで除外できる。
+

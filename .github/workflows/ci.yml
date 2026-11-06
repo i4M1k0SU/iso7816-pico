@@ -32,6 +32,16 @@ jobs:
       - name: Test
         run: ctest --test-dir build-tests --output-on-failure
 
+  format:
+    name: clang-format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install clang-format
+        run: pip install clang-format==18.1.8
+      - name: Check every C file against .clang-format
+        run: git ls-files '*.c' '*.h' | xargs clang-format --dry-run -Werror --style=file
+
   firmware:
     name: Demo firmware (${{ matrix.board }})
     runs-on: ubuntu-latest
