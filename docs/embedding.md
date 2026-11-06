@@ -97,3 +97,30 @@ FetchContent_Declare(iso7816_pico
 FetchContent_MakeAvailable(iso7816_pico)
 target_link_libraries(my_card PRIVATE iso7816_pico::pico)
 ```
+
+## 7. システムクロックを下げる (動作電流の削減)
+
+リーダーの VCC から Pico を動かすなど動作電流を抑えたい場合は、SDK の仕組みでシステムクロックを下げられる。
+フレームワーク側に設定項目はなく、利用側の実行ファイルに compile definition を付けるだけで `clocks_init()`
+(main より前) から有効になる。
+
+```cmake
+# 12 MHz 水晶 -> VCO 960 MHz / 5 / 4 = 48 MHz。USB の PLL は 48 MHz のまま変わらない。
+target_compile_definitions(my_card PRIVATE
+        SYS_CLK_KHZ=48000
+        PLL_SYS_VCO_FREQ_KHZ=960000
+        PLL_SYS_POSTDIV1=5
+        PLL_SYS_POSTDIV2=4
+)
+```
+
+* PLL の 3 つの値はまとめて指定する (揃っていないと SDK が `#error` を出す)。`PLL_SYS_VCO_FREQ_KHZ` は SDK 2.x では
+  `PLL_SYS_VCO_FREQ_HZ` の別名である。ボードヘッダで定義しても同じ効果になる。
+* 定義は **利用側の実行ファイル** に付ける。SDK のクロック初期化コードは実行ファイル側にコンパイルされるので、
+  フレームワークのライブラリには何も要らない。
+* PIO はシステムクロックで動いてリーダーの CLK を数えるので、システムクロックは CLK の 8 倍以上必要である
+  ([internals.md](internals.md))。48 MHz なら CLK 6 MHz 程度までのリーダーが対象で、下回るとセッション開始時に警告が
+  出る。コンソールの `status` でシステムクロックと CLK を確認できる。
+* USB (コンソール、picotool による書き込み) は PLL_USB で動くので影響しない。電源投入時の突入電流は基板の
+  コンデンサで決まり、変わらない。
+* 48 MHz では SCR3310 (CLK 4.8 MHz) で T=0、T=1、PPS による F/D=372/4 の動作を確認済み。
