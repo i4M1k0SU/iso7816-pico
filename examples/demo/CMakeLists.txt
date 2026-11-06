@@ -7,6 +7,17 @@ set(DEMO_SOURCES
 add_executable(iso7816-pico-demo ${DEMO_SOURCES})
 
 target_link_libraries(iso7816-pico-demo PRIVATE iso7816_pico::pico)
+
+# Which of the ATRs in card_profile.c the demo sends.  Empty (the default) leaves the choice to the ATR_IN_USE #define
+# there; t0 / t1 / negotiable override it (tools/hw_regression.ps1 builds all three, each in its own build directory).
+set(DEMO_ATR "" CACHE STRING "Demo card ATR: t0, t1 or negotiable (empty: the #define in card_profile.c)")
+set_property(CACHE DEMO_ATR PROPERTY STRINGS "" t0 t1 negotiable)
+if(DEMO_ATR)
+    if(NOT DEMO_ATR MATCHES "^(t0|t1|negotiable)$")
+        message(FATAL_ERROR "DEMO_ATR must be t0, t1 or negotiable (got '${DEMO_ATR}')")
+    endif()
+    target_compile_definitions(iso7816-pico-demo PRIVATE DEMO_ATR_IN_USE=s_atr_${DEMO_ATR})
+endif()
 # Warnings as errors for the card's own sources only: the executable also compiles the Pico SDK's sources (they come
 # with the SDK's INTERFACE libraries), and those should not break the build on a newer compiler or SDK.
 set_source_files_properties(${DEMO_SOURCES} PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Werror")
