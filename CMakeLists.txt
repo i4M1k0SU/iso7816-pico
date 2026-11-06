@@ -102,6 +102,10 @@ target_compile_definitions(iso7816_pico_pico PUBLIC
         NVM_IDLE_SAVE_MS=${NVM_IDLE_SAVE_MS}
 )
 target_compile_options(iso7816_pico_pico PRIVATE -Wall -Wextra -Werror)
+# pico_stdio_usb is a public requirement: the console, the picotool reset interface and the 1200-baud BOOTSEL entry
+# all live in it, and the application's executable must compile it (it is an SDK INTERFACE library).  The framework
+# writes only to the USB driver, so UART stdio is not needed: disable it in the application with
+# pico_enable_stdio_uart(<target> 0), otherwise it claims GP0 / GP1 (GP1 is the default CLK contact).
 target_link_libraries(iso7816_pico_pico
         PUBLIC iso7816_pico_core pico_stdlib pico_stdio_usb
         PRIVATE pico_bootrom pico_flash pico_rand hardware_flash hardware_pio hardware_watchdog
