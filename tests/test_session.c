@@ -39,6 +39,15 @@ void test_session(void) {
     tx = fake_phy_tx_log(&n);
     CHECK_HEX(tx, n, "3B 08 50 69 63 6F 37 38 31 36  6D 00  6E 00");
 
+    // Only one PPS: a second request after a successful one is a command header as well (CLA FF -> 6E00).
+    fake_phy_clear();
+    applied = fake_phy_apply_count();
+    fake_phy_push_hex("FF 10 13 FC  FF 10 13 FC 00");
+    session_run();
+    tx = fake_phy_tx_log(&n);
+    CHECK_HEX(tx, n, "3B 08 50 69 63 6F 37 38 31 36  FF 10 13 FC  6E 00");
+    CHECK_EQ(fake_phy_apply_count(), applied + 1);
+
     // The REBOOT BOOTSEL command ends the session with the flag set, after the 90 00 went out.
     fake_phy_clear();
     fake_phy_push_hex("80 E0 00 00 00  00 11 00 00 00");
