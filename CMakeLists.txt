@@ -77,6 +77,34 @@ target_compile_definitions(iso7816_pico_core INTERFACE
 )
 target_compile_features(iso7816_pico_core INTERFACE c_std_11)
 
+# ---- Version and build commit ------------------------------------------------------------------------------------------
+# The version lives in include/iso7816_pico/version.h; ISO7816_PICO_VERSION is the same value for the application.
+file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/include/iso7816_pico/version.h _ver REGEX "^#define ISO7816_PICO_VERSION_")
+string(REGEX REPLACE ".*VERSION_MAJOR +([0-9]+).*" "\\1" _ver_major "${_ver}")
+string(REGEX REPLACE ".*VERSION_MINOR +([0-9]+).*" "\\1" _ver_minor "${_ver}")
+string(REGEX REPLACE ".*VERSION_STRING +\"([^\"]*)\".*" "\\1" _ver_string "${_ver}")
+if(NOT _ver_string STREQUAL "${_ver_major}.${_ver_minor}")
+    message(FATAL_ERROR "version.h: ISO7816_PICO_VERSION_STRING +\"${_ver_string}\" is not MAJOR.MINOR")
+endif()
+set(ISO7816_PICO_VERSION ${_ver_string})
+if(NOT ISO7816_PICO_STANDALONE)
+    set(ISO7816_PICO_VERSION ${_ver_string} PARENT_SCOPE)
+endif()
+
+# iso7816_pico_build.h (ISO7816_PICO_COMMIT / ISO7816_PICO_APP_COMMIT, see cmake/build_info.cmake) is regenerated at
+# every build, not only at configure time, so the console banner never shows a stale commit.  The script rewrites the
+# file only when the content changes, so an unchanged commit rebuilds nothing.  Only console.c includes it.
+find_package(Git QUIET)
+set(ISO7816_PICO_BUILD_H ${CMAKE_CURRENT_BINARY_DIR}/generated/iso7816_pico_build.h)
+add_custom_target(iso7816_pico_build_info
+        COMMAND ${CMAKE_COMMAND} -DGIT_EXECUTABLE=${GIT_EXECUTABLE} -DFRAMEWORK_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -DAPP_DIR=${CMAKE_SOURCE_DIR} -DOUTPUT=${ISO7816_PICO_BUILD_H}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/build_info.cmake
+        BYPRODUCTS ${ISO7816_PICO_BUILD_H}
+        COMMENT "iso7816-pico: build commit"
+        VERBATIM
+)
+
 # ---- iso7816_pico::pico ------------------------------------------------------------------------------------------------
 # One static library: the core sources depend on the PHY / NVM port implemented here, so splitting them into two
 # archives would only create a link-order problem for the application.
@@ -93,7 +121,9 @@ add_library(iso7816_pico::pico ALIAS iso7816_pico_pico)
 pico_generate_pio_header(iso7816_pico_pico ${CMAKE_CURRENT_SOURCE_DIR}/src/pico/hal/iso7816.pio)
 target_include_directories(iso7816_pico_pico
         PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/core ${CMAKE_CURRENT_SOURCE_DIR}/src/pico
+                ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
+add_dependencies(iso7816_pico_pico iso7816_pico_build_info)
 target_compile_definitions(iso7816_pico_pico PUBLIC
         ISO7816_PIN_IO=${ISO7816_PIN_IO}
         ISO7816_PIN_CLK=${ISO7816_PIN_CLK}

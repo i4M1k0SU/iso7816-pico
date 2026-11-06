@@ -113,6 +113,31 @@ picotool load -f -x build/my_card.uf2          # 動作中のファームウェ�
 
 Pico 2 (RP2350) 向けは `-DPICO_BOARD=pico2` を付けて別のビルドディレクトリで構成する。
 
+### 版とコミットの表示
+
+コンソールの接続時バナー、`help`、`card` の先頭には次の 2 行が出る。
+
+```
+=== My Card 2.3 (9e80cac) ===
+iso7816-pico 1.0 (e6eabb5)
+```
+
+1 行目はカードプロファイルの `name` / `version` (NULL なら `pico_set_program_name` / `pico_set_program_version`) と
+利用側プロジェクト (`CMAKE_SOURCE_DIR`) のコミット、2 行目はフレームワークの版とフレームワーク自身のコミットである。
+submodule として置いた場合は submodule が指しているコミットが出るので、どの版のフレームワークで焼いたかが分かる。
+フレームワーク単体のビルドでは両者が同じなので、2 行目のコミットは省く。
+
+- コミットは HEAD の先頭 7 文字で、追跡しているファイルに未コミットの変更があれば `-dirty` が付く
+  (未追跡のファイルは数えない)。git がない、またはリポジトリでない (tarball で展開した) 場合は `unknown` になる。
+  フレームワークのディレクトリが自身の作業ツリーの最上位でないとき (利用側リポジトリにファイルとして取り込んだ場合)
+  も、利用側のコミットを誤って出さないよう `unknown` にする。
+- 値は configure 時ではなくビルドのたびに `cmake/build_info.cmake` が調べ、ビルドディレクトリの
+  `generated/iso7816_pico_build.h` に書く。内容が変わったときだけ書き換えるので、コミットが同じなら再コンパイルは起きない。
+  commit や `git submodule update` の後に `cmake --build` するだけで新しいコミットが入る。
+- フレームワークの版は `include/iso7816_pico/version.h` の `ISO7816_PICO_VERSION_MAJOR` / `_MINOR` /
+  `_STRING` と `card_framework_version()` で参照できる (アプレットの GET VERSION 応答に含めるなど)。CMake からは
+  `add_subdirectory()` の後で変数 `ISO7816_PICO_VERSION` (`1.0`) として読める。
+
 ## 6. FetchContent を使う場合
 
 submodule を持ちたくなければ FetchContent でも同じターゲットが使える。
