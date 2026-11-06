@@ -9,6 +9,8 @@
 
 // ---- Command / response -------------------------------------------------------
 
+struct applet;   // applet_t, defined in iso7816_pico/card.h
+
 typedef struct {
     uint8_t cla, ins, p1, p2;
     const uint8_t *data;   // command data field (NULL when lc == 0)
@@ -22,13 +24,24 @@ typedef struct {
     bool chaining;         // command chaining: more commands follow
     uint8_t sm;            // secure messaging indication 0..3 (0 = none)
     bool interindustry;    // CLA bit 8 = 0
+    // The applet selected on the addressed channel when the dispatcher took the command (NULL when none), so that one
+    // implementation can serve several applets (cmd->applet->ctx).  Inside an applet's select() it is the applet being
+    // selected.  Filled by the dispatcher before any handler, hook, select() or process() runs.
+    const struct applet *applet;
 } apdu_t;
 
 typedef struct {
     uint8_t *data;         // response data buffer (APDU_BUF_SIZE bytes)
     uint32_t cap;
     uint32_t len;
+    // Sticky: set by the resp_put*() helpers when they had to drop bytes because the buffer is full.  When a handler
+    // returns a success or warning SW (9000 / 61xx / 62xx / 63xx) with overflow set, the dispatcher answers 6F00 with
+    // no data instead of sending an incomplete response, and logs "<name>: response overflow (cap N)".
+    bool overflow;
 } apdu_resp_t;
+
+// Initialiser for an empty response over buf[cap]; resp_reset() empties one again.
+#define APDU_RESP_INIT(buf_, cap_) { (buf_), (cap_), 0, false }
 
 // Handler result: a status word, or APDU_UNHANDLED to let the next layer try.
 #define APDU_UNHANDLED 0x0000
@@ -61,8 +74,21 @@ typedef struct {
 
 static inline uint16_t apdu_p1p2(const apdu_t *c) { return (uint16_t)((c->p1 << 8) | c->p2); }
 
+static inline void resp_reset(apdu_resp_t *r) {
+    r->len = 0;
+    r->overflow = false;
+}
+
+// Append n bytes.  What does not fit is dropped and sets r->overflow (see apdu_resp_t).
 static inline void resp_put(apdu_resp_t *r, const void *src, size_t n) {
-    if (r->len + n > r->cap) n = r->cap - r->len;
+    if (r->len >= r->cap) {
+        if (n) r->overflow = true;
+        return;
+    }
+    if (n > r->cap - r->len) {
+        n = r->cap - r->len;
+        r->overflow = true;
+    }
     const uint8_t *s = src;
     for (size_t i = 0; i < n; i++) r->data[r->len + i] = s[i];
     r->len += n;
@@ -73,7 +99,7 @@ static inline void resp_put_u8(apdu_resp_t *r, uint8_t b) { resp_put(r, &b, 1); 
 // Decode a complete command APDU (short or extended length).
 bool apdu_decode(const uint8_t *buf, size_t len, apdu_t *out);
 
-// Simple TLV writer (1-byte tag, 1- or 2-byte length).
+// Simple TLV writer (1-byte tag, 1- or 2-byte length).  Sets r->overflow like resp_put() when it does not fit.
 void resp_put_tlv(apdu_resp_t *r, uint8_t tag, const void *val, size_t n);
 size_t tlv_len_size(size_t n);
 

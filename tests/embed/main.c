@@ -5,10 +5,18 @@
 
 static const uint8_t s_aid[] = { 0xF0, 'E', 'M', 'B' };
 
+// The greeting is per applet instance (applet_t.ctx), which the handler reaches through cmd->applet.
 static uint16_t h_hello(const apdu_t *cmd, apdu_resp_t *resp) {
-    (void)cmd;
-    resp_put(resp, "hello", 5);
+    const char *greeting = cmd->applet && cmd->applet->ctx ? cmd->applet->ctx : "hello";
+    resp_put(resp, greeting, strlen(greeting));
     return SW_OK;
+}
+
+static void embed_reset(const applet_t *self) { (void)self; }
+
+static void embed_deselect(const applet_t *self, uint8_t channel) {
+    (void)self;
+    (void)channel;
 }
 
 static const apdu_cmd_desc_t s_cmds[] = {
@@ -19,8 +27,11 @@ static const applet_t s_applet = {
     .name = "embed",
     .aid = s_aid,
     .aid_len = sizeof s_aid,
+    .ctx = "hello",
     .cmds = s_cmds,
     .n_cmds = 1,
+    .deselect = embed_deselect,
+    .reset = embed_reset,
 };
 
 static const applet_t *const s_applets[] = { &s_applet };

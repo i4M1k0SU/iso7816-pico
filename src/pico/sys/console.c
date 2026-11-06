@@ -376,7 +376,7 @@ static void cmd_apdu(const char *args) {
         dispatch_reset();
         s_seen_sessions = phy_stats()->sessions;
     }
-    apdu_resp_t resp = { dispatch_resp_buf(), APDU_BUF_SIZE, 0 };
+    apdu_resp_t resp = APDU_RESP_INIT(dispatch_resp_buf(), APDU_BUF_SIZE);
     uint16_t sw = dispatch_process(&cmd, &resp);
     char line[3 * 32 + 1];
     for (size_t off = 0; off < resp.len; off += 32) {
