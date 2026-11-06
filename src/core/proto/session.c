@@ -127,7 +127,8 @@ void session_run(void) {
             s_protocol = r.protocol;
             set_protocol_params(&p, s_protocol);
             phy_apply_params(&p);
-            continue;              // PPS may be repeated once more by some readers
+            first = false;         // ISO 7816-3 9.1: one PPS exchange, directly after the ATR
+            continue;
         }
         first = false;
 
