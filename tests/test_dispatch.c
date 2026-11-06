@@ -30,6 +30,10 @@ void test_dispatch(void) {
     CHECK_EQ(sw("10 D6 00 00 02 41 42"), 0x9000);
     CHECK_EQ(sw("00 B0 00 00 05"), 0x6883);
     CHECK_EQ(sw("00 B0 81 00 05"), 0x9000); // the chain state was discarded (EF 0101 via SFI)
+    // A link without data (cmd.data is NULL then; found by tests/fuzz, UBSan: memcpy from NULL).
+    CHECK_EQ(sw("10 B0 00 00 05"), 0x9000);
+    CHECK_EQ(sw("00 B0 00 00 05"), 0x9000);
+    CHECK_EQ(r.len, 5);
 
     // Logical channels: closed channel, explicit open, close, basic channel cannot close.  Opened from the basic
     // channel, a channel starts with the default applet (its select() makes EF 0101 current), not with channel 0's EF.

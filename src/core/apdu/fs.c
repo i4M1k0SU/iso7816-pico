@@ -603,7 +603,8 @@ uint16_t fs_cmd_search_record(const apdu_t *cmd, apdu_resp_t *resp) {
         const uint8_t *p;
         uint16_t len;
         if (!fs_record_read(ef, n, &p, &len)) continue;
-        if (len >= cmd->lc && memcmp(p, cmd->data, cmd->lc) == 0) resp_put_u8(resp, (uint8_t)n);
+        // An empty search string (data NULL) matches every record.
+        if (len >= cmd->lc && (!cmd->lc || memcmp(p, cmd->data, cmd->lc) == 0)) resp_put_u8(resp, (uint8_t)n);
     }
     return SW_OK;
 }

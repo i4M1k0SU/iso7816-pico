@@ -450,7 +450,7 @@ uint16_t dispatch_process(const apdu_t *in, apdu_resp_t *resp) {
             s_chain_len = 0;
             return SW_WRONG_LENGTH;
         }
-        memcpy(s_chain_buf + s_chain_len, cmd.data, cmd.lc);
+        if (cmd.lc) memcpy(s_chain_buf + s_chain_len, cmd.data, cmd.lc); // data is NULL for an empty link
         s_chain_len += cmd.lc;
         if (cmd.chaining) {
             memcpy(s_chain_hdr, hdr, 4);
