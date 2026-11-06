@@ -10,6 +10,7 @@ Windows は PowerShell 版、Linux / macOS (と Git Bash) はシェル版を使�
 .\tools\flash.ps1 -NoBuild         # 書き込みのみ
 .\tools\flash.ps1 -NoFlash         # ビルドのみ
 .\tools\flash.ps1 -Board pico2     # Pico 2 (RP2350) 向けに build-pico2/ でビルドして書き込む
+.\tools\flash.ps1 -BuildDir build-atr-t1 -CMakeArgs '-DDEMO_ATR=t1'   # 別のビルドディレクトリと cmake の設定
 ```
 
 ```sh
@@ -17,11 +18,14 @@ tools/flash.sh                     # 同上 (PICO_SDK_ROOT で ~/.pico-sdk 以�
 tools/flash.sh --no-build          # 書き込みのみ
 tools/flash.sh --no-flash          # ビルドのみ
 tools/flash.sh --board pico2       # Pico 2 向け (build-pico2/)
+tools/flash.sh --build-dir build-atr-t1 -DDEMO_ATR=t1
 ```
 
 どちらもリポジトリ単独のビルド (`examples/demo` → `build/examples/demo/iso7816-pico-demo.uf2`) を書き込む。
 `-Board` / `--board` に `pico` 以外を指定すると `build-<ボード名>/` を `-DPICO_BOARD=<ボード名>` で構成して使う
-(`build.ninja` がまだない場合だけ構成し、あればそのまま ninja を実行する)。Pico 2 向けはコンパイルのみ確認済みで、
+(`build.ninja` がまだない場合だけ構成し、あればそのまま ninja を実行する)。`-BuildDir` / `--build-dir` は
+ビルドディレクトリを直接指定し、`-CMakeArgs` / `-D...` は cmake に渡す (構成済みのディレクトリでは cmake を再実行して
+反映する)。Pico 2 向けはコンパイルのみ確認済みで、
 実機は未検証である。利用側プロジェクトからの使い方は [embedding.md](embedding.md)。
 
 SDK、GCC、picotool の版は `CMakeLists.txt` の VS Code 拡張用ブロック (`sdkVersion` / `toolchainVersion` /
@@ -90,6 +94,62 @@ all checks passed
   固定長・可変長・サイクリックレコード、SEARCH RECORD、GET DATA、GET CHALLENGE + EXTERNAL/INTERNAL AUTHENTICATE フック、
   論理チャネル (MANAGE CHANNEL とチャネルごとのセキュリティ状態)、拡張長 APDU (T=0: ENVELOPE 300 バイト、T=1: 1000 バイトの Lc/Le)。
 * NVM: セッション中に書き換えた EF はアイドル時に、PIN カウンタは照合のたびにフラッシュへ保存され、電源再投入後も残る。
+
+デモの ATR は `card_profile.c` の `#define ATR_IN_USE` で選ぶほか、ソースを書き換えずにビルド時にも選べる。
+CMake のキャッシュ変数 `DEMO_ATR` に `t0` / `t1` / `negotiable` を指定すると、それぞれ `s_atr_t0` / `s_atr_t1` /
+`s_atr_negotiable` を使う。空 (既定) なら `#define` に従う。
+
+## 実機回帰テスト
+
+`tools/hw_regression.ps1` (Windows、PowerShell 7) は、上記 3 種類の ATR すべてについてビルド・書き込み・テストを
+1 コマンドで行う。各構成で次を順に実行する。
+
+1. `-DDEMO_ATR=<名前>` で `build-atr-<名前>/` にデモをビルドする (`flash.ps1` を使う。ディレクトリが構成ごとに分かれて
+   いるので、2 回目以降は差分ビルドで済む)
+2. picotool で書き込み、コンソールの COM ポートが戻るのを待つ (ポートは USB ベンダー ID 2E8A から探す)
+3. 起動ログの自己診断行が `selftest(loopback OK)` と `parity error: detected` を含むことを確認する
+4. `sc_test.ps1` を構成に合ったプロトコルで実行する (`t0`: T0、`t1`: T1、`negotiable`: Any と T0)。ATR がその構成のものと
+   異なる場合や 1 項目も実行できずに失敗した場合 (書き込み直後にリーダーが前のセッションを持ち越したとき) は 1 回だけ
+   やり直す
+5. コンソールの `status` を読み、`rx parity` / `rx overrun` / `tx echo` / `tx timeout` と `repetition` がすべて 0 であることを
+   確認する。`negotiable` の Any では、APDU 1 個だけの短いセッションのログに `PPS: T=1 F/D 372/1 -> 372/4` が出ることも
+   確認する (テスト一式のログはコンソールのリングバッファに収まらないため)
+
+最後に表 (ATR、要求したプロトコル → 実際のプロトコル、結果、項目数、送受信文字数、エラー数、所要時間) を出し、1 つでも
+失敗があれば終了コード 1 で終わる。終了時には `t0` のビルド (既定のデモと同じファームウェア) を書き戻すので、基板は
+通常の状態に戻る。コンソールは必ず子プロセスからタイムアウト付きで開く (Pico が消えたときに .NET の SerialPort が
+呼び出し側を巻き込んで固まるのを避けるため)。
+
+```powershell
+.\tools\hw_regression.ps1                  # 3 構成すべて
+.\tools\hw_regression.ps1 -Only t1         # 指定した構成だけ (t0, t1, negotiable、カンマ区切りで複数可)
+.\tools\hw_regression.ps1 -NoBuild         # ビルドせず、build-atr-*/ の既存の UF2 を書き込む
+.\tools\hw_regression.ps1 -Reader ACS      # リーダー名の部分一致 (既定 SCR33)
+.\tools\hw_regression.ps1 -Port COM7       # コンソールのポートを指定する
+```
+
+所要時間はビルドが最新なら約 1.5 分 (書き込みと起動待ちが 1 構成あたり約 10 秒、テストが 1 回あたり 8〜15 秒) である。
+新しいビルドディレクトリの初回は 1 構成あたり 10 秒ほど増える。前提は `flash.ps1` と `sc_test.ps1` の前提
+(`~/.pico-sdk` のツール、PC/SC リーダー) と、Pico がリーダーに挿さっていて USB で接続されていることである。
+実行中はリーダーとコンソールを他のプログラムで開かない。
+
+実行例 (SCR3310、Windows 11):
+
+```
+ATR        Protocol   Result Checks Chars rx/tx Errors Time [s] Note
+---        --------   ------ ------ ----------- ------ -------- ----
+t0         T0 -> T=0  PASS   67/67  1105 / 1296      0    10.30
+t1         T1 -> T=1  PASS   67/67  2025 / 2488      0    14.00
+negotiable Any -> T=1 PASS   67/67  2047 / 2543      0    14.20 PPS: T=1 F/D 372/1 -> 372/4
+negotiable T0 -> T=0  PASS   67/67  1109 / 1296      0     8.20
+
+hardware regression passed (4 runs, 85 s)
+```
+
+`tools/hw_regression.sh` は同じ手順の Linux / macOS 版で、`flash.sh`、`sc_test.py` と pyserial を使う
+(`pip install pyscard pyserial`)。オプションは `--only <名前>` (繰り返し可)、`--no-build`、`--reader`、`--port`
+(既定は `/dev/serial/by-id/usb-Raspberry_Pi_*` か `/dev/cu.usbmodem*`)。インタープリタは `$PYTHON` で変えられる。
+Windows の Git Bash から `--port COM5` で全構成が通ることは確認したが、Linux と macOS の実機では未検証である。
 
 ## ホスト側テスト
 
