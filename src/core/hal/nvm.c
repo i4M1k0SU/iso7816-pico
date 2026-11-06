@@ -215,6 +215,8 @@ nvm_save_result_t nvm_save(const void *blob, size_t size) {
         memset(page, 0xFF, sizeof page);
         for (size_t i = 0; i < NVM_PAGE_BYTES && off + i < total; i++) {
             size_t pos = off + i;
+            // h is fully initialised; the analyzer loses track of it when it is read byte by byte.
+            // NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
             page[i] = pos < sizeof h ? ((const uint8_t *)&h)[pos] : src[pos - sizeof h];
         }
         if (!nvm_port_program((uint32_t)(base + off), page, sizeof page)) return NVM_SAVE_FAILED;

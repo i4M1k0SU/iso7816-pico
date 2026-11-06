@@ -77,6 +77,7 @@ void test_t0(void) {
     CHECK_EQ(r.sw, 0x63C3);
     tx = fake_phy_tx_log(&n);
     CHECK_EQ(n, 2);
+    CHECK_HEX(tx, n, "63 C3");
 
     // Unknown INS is treated as case 1: no ACK, 6D00 even with P3 != 0.
     CHECK(tpdu("00 11 00 00 05", &r));
@@ -143,7 +144,7 @@ void test_t0(void) {
     fake_phy_tx_clear();
     fake_phy_push_hex("80 30 00");
     CHECK(t0_handle_command(-1));
-    tx = fake_phy_tx_log(&n);
+    fake_phy_tx_log(&n);
     CHECK_EQ(n, 0);
     CHECK_EQ(fake_phy_rx_timeouts(), timeouts + 1);
     CHECK(tpdu("80 30 00 00 04", &r));
@@ -164,7 +165,7 @@ void test_t0(void) {
     fake_phy_push_gap();
     fake_phy_push_hex("80 30 00 00 04");
     CHECK(t0_handle_command(-1));
-    tx = fake_phy_tx_log(&n);
+    fake_phy_tx_log(&n);
     CHECK_EQ(n, 0);
     CHECK_EQ(fake_phy_pending(), 5);
     fake_phy_clear();
@@ -173,7 +174,7 @@ void test_t0(void) {
     // The same with the session layer passing the first byte (as session_run() does).
     fake_phy_tx_clear();
     CHECK(t0_handle_command(0x3F));
-    tx = fake_phy_tx_log(&n);
+    fake_phy_tx_log(&n);
     CHECK_EQ(n, 0);
 
     // A data field that stops short is dropped: the card sent only the ACK, and the next command works.
@@ -193,6 +194,7 @@ void test_t0(void) {
     CHECK(t0_handle_command(-1));
     tx = fake_phy_tx_log(&n);
     CHECK_EQ(n, 1);
+    CHECK_EQ(tx[0], 0xC2);
     CHECK(apdu("00 C2 00 00 09 80 20 00 00 00 00 02 01 02", &r));
     CHECK_EQ(r.sw, 0x9000);
     CHECK_HEX(r.data, r.len, "01 02");
@@ -205,6 +207,7 @@ void test_t0(void) {
     CHECK_EQ(r.len, 0);
     tx = fake_phy_tx_log(&n);
     CHECK_EQ(n, 2);
+    CHECK_HEX(tx, n, "90 00");
     CHECK(tpdu("00 70 80 01 00", &r)); // close it again
     CHECK_EQ(r.sw, 0x9000);
 

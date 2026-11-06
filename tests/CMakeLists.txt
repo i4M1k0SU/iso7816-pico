@@ -2,6 +2,9 @@
 # driven by reader-side models of T=0 and T=1.  Nothing here needs the Pico SDK.
 #
 #   cmake -S tests -B build-tests && cmake --build build-tests && ctest --test-dir build-tests --output-on-failure
+#
+# -DISO7816_TESTS_SANITIZE=ON builds with AddressSanitizer and UndefinedBehaviorSanitizer; any finding, UB included,
+# aborts the run (-fno-sanitize-recover=all), so ctest fails.
 cmake_minimum_required(VERSION 3.16)
 project(iso7816-pico-tests C)
 
@@ -10,6 +13,8 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
 endif()
+
+option(ISO7816_TESTS_SANITIZE "Build the host tests with ASan and UBSan" OFF)
 
 set(ISO7816_PICO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 include(${ISO7816_PICO_ROOT}/cmake/core_sources.cmake)
@@ -48,6 +53,11 @@ target_include_directories(iso7816_tests PRIVATE
 )
 
 target_compile_options(iso7816_tests PRIVATE -Wall -Wextra -Werror)
+if(ISO7816_TESTS_SANITIZE)
+    set(ISO7816_SANITIZE_FLAGS -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
+    target_compile_options(iso7816_tests PRIVATE ${ISO7816_SANITIZE_FLAGS})
+    target_link_options(iso7816_tests PRIVATE ${ISO7816_SANITIZE_FLAGS})
+endif()
 
 enable_testing()
 add_test(NAME iso7816_tests COMMAND iso7816_tests)
