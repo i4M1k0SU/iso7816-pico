@@ -412,6 +412,8 @@ uint16_t dispatch_process(const apdu_t *in, apdu_resp_t *resp) {
     cmd.applet = NULL;
 
     if (in->cla == 0xFF) return SW_CLA_NOT_SUPPORTED;
+    // max_channels() <= CARD_MAX_CHANNELS, which the analyzer does not see through.
+    // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound)
     if (cmd.channel >= max_channels() || !s_ch[cmd.channel].open) {
         return SW_LOGICAL_CHANNEL_NOT_SUPP;
     }
