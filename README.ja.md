@@ -1,3 +1,5 @@
+[English](README.md) | 日本語
+
 # ISO7816 Pico
 
 [![CI](https://github.com/i4M1k0SU/iso7816-pico/actions/workflows/ci.yml/badge.svg)](https://github.com/i4M1k0SU/iso7816-pico/actions/workflows/ci.yml)
