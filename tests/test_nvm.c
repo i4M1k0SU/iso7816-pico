@@ -13,6 +13,142 @@ static void fill(uint8_t *b, uint8_t seed) {
     for (int i = 0; i < BLOB; i++) b[i] = (uint8_t)(seed + i * 7);
 }
 
+static uint32_t test_crc32(const uint8_t *p, size_t n) {
+    uint32_t c = 0xFFFFFFFFu;
+    for (size_t i = 0; i < n; i++) {
+        c ^= p[i];
+        for (int k = 0; k < 8; k++) c = (c >> 1) ^ (0xEDB88320u & (0u - (c & 1u)));
+    }
+    return ~c;
+}
+
+#define MAGIC_V3 0x334E5637u // "7VN3"
+#define MAGIC_V2 0x324E5637u // "7VN2"
+#define MAGIC_V1 0x4D564E37u // "7NVM"
+
+static uint32_t word_at(const uint8_t *p, int i) {
+    uint32_t w;
+    memcpy(&w, p + 4 * i, 4);
+    return w;
+}
+
+// Recompute the V3 header CRC (last header word) after a test edited the header on purpose.
+static void fix_hcrc(uint8_t *hdr) {
+    uint32_t c = test_crc32(hdr, 20);
+    memcpy(hdr + 20, &c, 4);
+}
+
+// Write a 24-byte V2 header (layout id, last word FFFFFFFF) plus the blob into the erased sector at `off`.
+static void put_v2(uint32_t off, uint32_t seq, uint32_t layout, const uint8_t *b) {
+    uint32_t h[6] = { MAGIC_V2, BLOB, seq, test_crc32(b, BLOB), layout, 0xFFFFFFFFu };
+    memcpy(fake_nvm_raw() + off, h, sizeof h);
+    memcpy(fake_nvm_raw() + off + sizeof h, b, BLOB);
+}
+
+// The header protects itself: V3 header CRC, V2 images still read, a flipped header bit hides the image.
+static void test_nvm_header(void) {
+    uint8_t blob[BLOB], back[BLOB];
+    uint8_t *f = fake_nvm_raw();
+
+    // Writes use V3: the last word is the CRC-32 of the 20 bytes before it.
+    fake_nvm_reset();
+    fill(blob, 1);
+    CHECK_EQ(nvm_save(blob, BLOB), NVM_SAVE_WRITTEN);
+    CHECK_EQ(word_at(f, 0), MAGIC_V3);
+    CHECK_EQ(word_at(f, 5), test_crc32(f, 20));
+    CHECK(nvm_load(back, BLOB));
+    CHECK_EQ(nvm_status()->stored_format, 3);
+    CHECK_EQ(nvm_status()->bad_headers, 0);
+
+    // A V2 image (written by the previous firmware) of this layout loads as it is: no layout change.  It is marked
+    // dirty, the next save rewrites it as V3 even though the blob is unchanged, and after that nothing is pending.
+    fake_nvm_reset();
+    nvm_take_dirty();
+    fill(blob, 4);
+    put_v2(0, 7, nvm_layout_id(), blob);
+    memset(back, 0, BLOB);
+    unsigned lines = g_log_lines;
+    CHECK(nvm_load(back, BLOB));
+    CHECK(memcmp(back, blob, BLOB) == 0);
+    CHECK(!nvm_status()->layout_changed);
+    CHECK(nvm_status()->valid);
+    CHECK_EQ(nvm_status()->stored_format, 2);
+    CHECK_EQ(nvm_status()->stored_layout, nvm_layout_id());
+    CHECK_EQ(nvm_status()->seq, 7);
+    CHECK_EQ(g_log_lines, lines); // nothing logged
+    CHECK(nvm_take_dirty());
+    CHECK_EQ(nvm_save(back, BLOB), NVM_SAVE_WRITTEN);
+    CHECK_EQ(nvm_status()->slot, 1);
+    CHECK_EQ(nvm_status()->seq, 8);
+    CHECK_EQ(word_at(f + 4096, 0), MAGIC_V3);
+    CHECK_EQ(word_at(f, 0), MAGIC_V2); // the V2 image stays until its slot is reused
+    CHECK(nvm_load(back, BLOB));
+    CHECK_EQ(nvm_status()->stored_format, 3);
+    CHECK(!nvm_take_dirty());
+    CHECK_EQ(nvm_save(back, BLOB), NVM_SAVE_UNCHANGED);
+    // A V2 image of another layout is a layout change, as before.
+    fake_nvm_reset();
+    put_v2(0, 7, nvm_layout_id() + 1, blob);
+    CHECK(!nvm_load(back, BLOB));
+    CHECK(nvm_status()->layout_changed);
+    CHECK_EQ(nvm_status()->stored_format, 2);
+    nvm_take_dirty();
+
+    // A flipped bit in the seq, layout or size of the newest V3 header (slot 1): that image is invisible and the older
+    // one (slot 0) is loaded, without a layout change.  In the seq of the older header: it must not become the newest.
+    static const struct {
+        uint32_t off;
+        int byte;
+        uint8_t bit;
+    } flips[] = {
+        { 4096, 8, 0x01 },  // seq of the newest: 2 -> 3, would still be the newest
+        { 4096, 16, 0x01 }, // layout of the newest: would look like a layout change
+        { 4096, 4, 0x01 },  // size of the newest: would fail the blob CRC anyway
+        { 0, 10, 0x10 },    // seq of the older: 1 -> 0x100001, would win over seq 2
+    };
+    for (size_t i = 0; i < sizeof flips / sizeof flips[0]; i++) {
+        fake_nvm_reset();
+        fill(blob, 1);
+        CHECK_EQ(nvm_save(blob, BLOB), NVM_SAVE_WRITTEN);
+        fill(blob, 2);
+        CHECK_EQ(nvm_save(blob, BLOB), NVM_SAVE_WRITTEN);
+        f[flips[i].off + flips[i].byte] ^= flips[i].bit;
+        nvm_take_dirty();
+        lines = g_log_lines;
+        memset(back, 0, BLOB);
+        CHECK(nvm_load(back, BLOB));
+        bool newest_hit = flips[i].off != 0;
+        fill(blob, newest_hit ? 1 : 2);
+        CHECK(memcmp(back, blob, BLOB) == 0);
+        CHECK_EQ(nvm_status()->seq, newest_hit ? 1 : 2);
+        CHECK(!nvm_status()->layout_changed);
+        CHECK_EQ(nvm_status()->bad_headers, 1);
+        CHECK_EQ(g_log_lines, lines + 1);
+        CHECK(strstr(g_log_last, "ignored 1 image(s) with a bad header CRC") != NULL);
+        CHECK(!nvm_take_dirty());
+    }
+    // Both headers broken: defaults, and the next save does not reuse a broken seq (starts over at slot 0, seq 1).
+    fake_nvm_reset();
+    fill(blob, 1);
+    CHECK_EQ(nvm_save(blob, BLOB), NVM_SAVE_WRITTEN);
+    fill(back, 2);
+    CHECK_EQ(nvm_save(back, BLOB), NVM_SAVE_WRITTEN);
+    f[8] ^= 0x01;
+    f[4096 + 8] ^= 0x01;
+    CHECK(!nvm_load(back, BLOB));
+    CHECK_EQ(nvm_status()->bad_headers, 2);
+    CHECK(!nvm_status()->layout_changed);
+    CHECK_EQ(nvm_save(blob, BLOB), NVM_SAVE_WRITTEN);
+    CHECK_EQ(nvm_status()->slot, 0);
+    CHECK_EQ(nvm_status()->seq, 1);
+    CHECK(nvm_load(back, BLOB));
+    CHECK(memcmp(back, blob, BLOB) == 0);
+    CHECK_EQ(nvm_status()->bad_headers, 1); // slot 1 still holds the broken header
+
+    nvm_take_dirty();
+    fake_nvm_reset();
+}
+
 void test_nvm(void) {
     uint8_t blob[BLOB], back[BLOB];
     const uint32_t slots = NVM_FLASH_BYTES / 4096;
@@ -95,7 +231,12 @@ void test_nvm(void) {
     nvm_erase_all();
     CHECK_EQ(nvm_save(blob, BLOB), NVM_SAVE_WRITTEN);
     memcpy(hdr + 8, &wrap, 4); // seq field of the header in slot 0
-    // The CRC covers the blob only, so the slot stays valid with seq = 0xFFFFFFFF.
+    // Without the header CRC fixed up, the edited header is ignored.
+    CHECK(!nvm_load(back, BLOB));
+    CHECK_EQ(nvm_status()->bad_headers, 1);
+    fix_hcrc(hdr);
+    CHECK(nvm_load(back, BLOB));
+    CHECK_EQ(nvm_status()->seq, 0xFFFFFFFFu);
     fill(blob, 2);
     CHECK_EQ(nvm_save(blob, BLOB), NVM_SAVE_WRITTEN);
     CHECK_EQ(nvm_status()->seq, 0); // wrapped
@@ -124,6 +265,8 @@ void test_nvm(void) {
     CHECK_EQ(fake_nvm_erase_count(), 0);
     CHECK(!nvm_load(one_back, sizeof one_back));
     CHECK_EQ(nvm_status()->slots, 0);
+
+    test_nvm_header();
 }
 
 // ---- layout ids ----------------------------------------------------------------------------------------------------
@@ -142,15 +285,6 @@ static bool lay_migrate(uint32_t old_layout, const void *old_blob, size_t old_si
     if (!s_mig_accept) return false;
     s_lay_blob[0] = (uint8_t)(s_mig_first + 1);
     return true;
-}
-
-static uint32_t test_crc32(const uint8_t *p, size_t n) {
-    uint32_t c = 0xFFFFFFFFu;
-    for (size_t i = 0; i < n; i++) {
-        c ^= p[i];
-        for (int k = 0; k < 8; k++) c = (c >> 1) ^ (0xEDB88320u & (0u - (c & 1u)));
-    }
-    return ~c;
 }
 
 static void defaults(void) { memset(s_lay_blob, 0xD0, sizeof s_lay_blob); }
@@ -265,7 +399,7 @@ void test_nvm_layout(void) {
     fake_nvm_reset();
     uint8_t *f = fake_nvm_raw();
     fill(s_lay_blob, 9);
-    uint32_t v1[4] = { 0x4D564E37u, BLOB, 41, test_crc32(s_lay_blob, BLOB) };
+    uint32_t v1[4] = { MAGIC_V1, BLOB, 41, test_crc32(s_lay_blob, BLOB) };
     memcpy(f, v1, sizeof v1);
     memcpy(f + 16, s_lay_blob, BLOB);
     p.nvm_version = 0;
@@ -275,6 +409,7 @@ void test_nvm_layout(void) {
     CHECK_EQ(s_lay_blob[0], 0xD0);
     CHECK(nvm_status()->layout_changed);
     CHECK_EQ(nvm_status()->stored_layout, 0);
+    CHECK_EQ(nvm_status()->stored_format, 1);
     CHECK_EQ(nvm_status()->seq, 41);
     CHECK(strstr(g_log_last, "layout 00000000 (600 bytes), firmware expects 00010000") != NULL);
     nvm_take_dirty();
