@@ -12,6 +12,7 @@
 //   - hold the BOOTSEL button for ~0.3 s while running
 #include "iso7816_pico/runtime.h"
 
+#include "apdu/profile_check.h"
 #include "console.h"
 #include "hal/bootsel_button.h"
 #include "hal/nvm.h"
@@ -140,6 +141,9 @@ void card_runtime_init(const card_profile_t *profile) {
                    loaded ? (st->migrated ? "migrated" : "loaded from flash") : "defaults", (unsigned)profile->nvm_size,
                    (unsigned long)st->slot, (unsigned long)st->slots, (unsigned long)st->seq);
     }
+    // Profile consistency (after the NVM load, so that the PINs are checked as they will be used): one "profile: ..."
+    // line per finding; nothing when the profile is clean.  Never stops the boot (see apdu/profile_check.h).
+    profile_check(profile);
     fs_init(profile->files, profile->n_files);
     sec_init(profile->pins, profile->n_pins);
     session_init();

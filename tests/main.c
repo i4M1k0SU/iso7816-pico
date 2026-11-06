@@ -74,6 +74,7 @@ int main(int argc, char **argv) {
     run_test("nvm pin durability", test_nvm_pin_durability);
     run_test("nvm layout", test_nvm_layout);
     run_test("card suite", test_card_suite);
+    run_test("profile check", test_profile_check);
     printf("\n%d checks, %d failure(s)\n", g_checks, g_failures);
     return g_failures ? 1 : 0;
 }

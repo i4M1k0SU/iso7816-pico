@@ -8,6 +8,8 @@
 #include "iso7816_pico/config.h"
 #include "iso7816_pico/fs.h"
 #include "iso7816_pico/log.h"
+#include "iso7816_pico/version.h"
+#include "iso7816_pico_build.h"
 #include "proto/session.h"
 
 #include "hardware/watchdog.h"
@@ -173,11 +175,19 @@ static void print_status(void) {
 #define PICO_PROGRAM_VERSION_STRING ""
 #endif
 
-// "<name> <version>" from the card profile, or from CMake when the profile leaves them NULL.
+// "=== <name> <version> (<app commit>) ===" with name / version from the card profile, or from CMake when the profile
+// leaves them NULL, then "iso7816-pico <version> (<framework commit>)".  The framework's commit is left out when it is
+// the application's (a standalone build of this tree).  The commits come from iso7816_pico_build.h, regenerated at
+// every build (cmake/build_info.cmake).
 static void print_identity(void) {
     const char *name = card_profile->name ? card_profile->name : PICO_PROGRAM_NAME;
     const char *version = card_profile->version ? card_profile->version : PICO_PROGRAM_VERSION_STRING;
-    log_printf("=== %s%s%s ===", name, *version ? " " : "", version);
+    log_printf("=== %s%s%s (%s) ===", name, *version ? " " : "", version, ISO7816_PICO_APP_COMMIT);
+    if (strcmp(ISO7816_PICO_COMMIT, ISO7816_PICO_APP_COMMIT) == 0) {
+        log_printf("iso7816-pico %s", ISO7816_PICO_VERSION_STRING);
+    } else {
+        log_printf("iso7816-pico %s (%s)", ISO7816_PICO_VERSION_STRING, ISO7816_PICO_COMMIT);
+    }
 }
 
 static void print_card(void) {
@@ -452,10 +462,11 @@ static const console_cmd_t s_builtin[] = {
     { "reboot", "reboot (run the firmware again)", cmd_reboot },
 };
 
-// Two groups: the built-in commands, then the card profile's under the card's own name, so that a user of a finished
-// card can tell which commands belong to that card.
+// The identity as the title, then two groups: the built-in commands, then the card profile's under the card's own
+// name, so that a user of a finished card can tell which commands belong to that card.
 static void cmd_help(const char *args) {
     (void)args;
+    print_identity();
     log_printf("commands (type a name and Enter; Enter alone shows this list):");
     log_printf("built-in:");
     for (size_t i = 0; i < sizeof s_builtin / sizeof s_builtin[0]; i++) {
@@ -518,9 +529,7 @@ void console_poll(void) {
     bool connected = stdio_usb_connected();
     if (connected && !was_connected) {
         log_printf("%s", "");
-        print_identity();
-        log_printf("iso7816-pico: ISO 7816 smart card framework");
-        cmd_help(NULL);
+        cmd_help(NULL); // starts with the identity
         s_line_len = 0;
     }
     was_connected = connected;

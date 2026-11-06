@@ -114,8 +114,9 @@ PCK FC など) では Low のまま止まり、再設定まで線を引き続け
    `NVM_IDLE_SAVE_MS` (200 ms) 途絶えていれば保存する。T=1 では保存中 (50-100 ms、割り込み停止) に届いたブロックが
    8 段の受信 FIFO からあふれうるが、リーダーの再送で回復する。あふれは `status` の `rx overrun` とログ
    (`PHY: RX FIFO overrun`) に出る。PIN / PUK の試行回数は `sec.c` が照合前に同期で保存する。
-6. RST Low で `phy_enter_reset()`、NVM がまだ dirty なら保存 (内容が変わっていなければ書かない。スロット方式と
-   レイアウト ID の詳細は [card-profile.md](card-profile.md) の「永続データ」)。
+6. RST Low で `phy_enter_reset()`、NVM がまだ dirty なら保存 (内容が変わっていなければ書かない)。各スロットの
+   ヘッダは自身の CRC-32 を持ち (V3 形式)、構造体の CRC と合わせてヘッダ・本体のどちらが化けてもそのスロットは
+   無視される。スロット方式、レイアウト ID、ヘッダ形式 V1/V2/V3 の詳細は [card-profile.md](card-profile.md) の「永続データ」。
 
 ### T=0 の ENVELOPE の終端
 

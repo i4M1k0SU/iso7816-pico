@@ -1,5 +1,6 @@
 #include "iso7816_pico/fs.h"
 
+#include "apdu/profile_check.h"
 #include "hal/nvm.h"
 #include "iso7816_pico/card.h"
 #include "iso7816_pico/sec.h"
@@ -14,11 +15,16 @@ static fs_cursor_t s_cursor[CARD_MAX_CHANNELS];
 // setup / cursors
 // ---------------------------------------------------------------------------
 
+// A file profile_file_defect() objects to (it would make the commands access memory outside the profile's objects;
+// profile_check() logs it at boot) is skipped by the lookups below, so it can never become current.  Without a usable
+// MF there is no file system.
 void fs_init(const fs_file_t *files, size_t n) {
     s_files = files;
-    s_n = n;
+    s_n = files && n && !profile_file_defect(files, n, &files[0]) ? n : 0;
     fs_reset();
 }
+
+static bool usable(const fs_file_t *f) { return !profile_file_defect(s_files, s_n, f); }
 
 bool fs_present(void) { return s_files && s_n; }
 
@@ -48,7 +54,7 @@ static bool is_record_ef(const fs_file_t *f) {
 
 const fs_file_t *fs_child(const fs_file_t *df, uint16_t fid) {
     for (size_t i = 0; i < s_n; i++) {
-        if (s_files[i].parent == df && s_files[i].fid == fid) return &s_files[i];
+        if (s_files[i].parent == df && s_files[i].fid == fid && usable(&s_files[i])) return &s_files[i];
     }
     return NULL;
 }
@@ -64,7 +70,7 @@ const fs_file_t *fs_by_name(const uint8_t *name, size_t len, bool partial, const
         if (!is_df(f) || !f->name || len == 0) continue;
         if (partial ? (len <= f->name_len && memcmp(f->name, name, len) == 0)
                     : (len == f->name_len && memcmp(f->name, name, len) == 0)) {
-            return f;
+            if (usable(f)) return f;
         }
     }
     return NULL;
@@ -74,7 +80,7 @@ const fs_file_t *fs_by_name(const uint8_t *name, size_t len, bool partial, const
 const fs_file_t *fs_by_sfi(const fs_file_t *df, uint8_t sfi) {
     if (sfi == 0 || sfi > 30) return NULL;
     for (size_t i = 0; i < s_n; i++) {
-        if (s_files[i].parent == df && s_files[i].sfi == sfi && !is_df(&s_files[i])) {
+        if (s_files[i].parent == df && s_files[i].sfi == sfi && !is_df(&s_files[i]) && usable(&s_files[i])) {
             return &s_files[i];
         }
     }
@@ -597,7 +603,8 @@ uint16_t fs_cmd_search_record(const apdu_t *cmd, apdu_resp_t *resp) {
         const uint8_t *p;
         uint16_t len;
         if (!fs_record_read(ef, n, &p, &len)) continue;
-        if (len >= cmd->lc && memcmp(p, cmd->data, cmd->lc) == 0) resp_put_u8(resp, (uint8_t)n);
+        // An empty search string (data NULL) matches every record.
+        if (len >= cmd->lc && (!cmd->lc || memcmp(p, cmd->data, cmd->lc) == 0)) resp_put_u8(resp, (uint8_t)n);
     }
     return SW_OK;
 }

@@ -1,5 +1,6 @@
 #include "dispatch.h"
 
+#include "apdu/profile_check.h"
 #include "iso7816_pico/card.h"
 #include "iso7816_pico/fs.h"
 #include "iso7816_pico/log.h"
@@ -37,6 +38,13 @@ static uint8_t max_channels(void) {
 
 static uint16_t implicit_select(uint8_t ch, const applet_t *a, const fs_cursor_t *start, apdu_resp_t *resp);
 
+// Applet i of the profile, or NULL when profile_applet_defect() objects to it (it would make the dispatcher access
+// memory outside the profile's objects; profile_check() logs it at boot): such an applet is never reset or selected.
+static const applet_t *applet_at(size_t i) {
+    const applet_t *a = card_profile->applets ? card_profile->applets[i] : NULL;
+    return a && !profile_applet_defect(a) ? a : NULL;
+}
+
 void dispatch_reset(void) {
     for (uint8_t ch = 0; ch < CARD_MAX_CHANNELS; ch++) {
         s_ch[ch].open = ch == 0;
@@ -47,13 +55,13 @@ void dispatch_reset(void) {
     fs_reset();
     sec_reset();
     for (size_t i = 0; i < card_profile->n_applets; i++) {
-        const applet_t *a = card_profile->applets[i];
-        if (a->reset) a->reset(a);
+        const applet_t *a = applet_at(i);
+        if (a && a->reset) a->reset(a);
     }
     // The default applet is selected implicitly, exactly as an explicit SELECT would: its DF (if one shares its name)
     // becomes current and its select() runs.  Nothing is sent to the reader, so the response buffer is free here.
     const applet_t *a = card_profile->default_applet;
-    if (a) {
+    if (a && !profile_applet_defect(a)) {
         apdu_resp_t resp = APDU_RESP_INIT(s_resp_buf, APDU_BUF_SIZE);
         implicit_select(0, a, NULL, &resp);
     }
@@ -192,7 +200,8 @@ static void deselect_applet(uint8_t ch) {
 static const applet_t *find_applet(const uint8_t *name, size_t len, bool partial, const applet_t *after) {
     bool passed = after == NULL;
     for (size_t i = 0; i < card_profile->n_applets; i++) {
-        const applet_t *a = card_profile->applets[i];
+        const applet_t *a = applet_at(i);
+        if (!a) continue;
         if (!passed) {
             if (a == after) passed = true;
             continue;
@@ -441,7 +450,7 @@ uint16_t dispatch_process(const apdu_t *in, apdu_resp_t *resp) {
             s_chain_len = 0;
             return SW_WRONG_LENGTH;
         }
-        memcpy(s_chain_buf + s_chain_len, cmd.data, cmd.lc);
+        if (cmd.lc) memcpy(s_chain_buf + s_chain_len, cmd.data, cmd.lc); // data is NULL for an empty link
         s_chain_len += cmd.lc;
         if (cmd.chaining) {
             memcpy(s_chain_hdr, hdr, 4);
