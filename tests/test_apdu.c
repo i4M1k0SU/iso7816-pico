@@ -1,4 +1,5 @@
 #include "iso7816_pico/apdu.h"
+#include "iso7816_pico/card.h"
 #include "test.h"
 
 static bool decode(const char *hex, apdu_t *a) {
@@ -52,7 +53,7 @@ void test_apdu(void) {
 
     // TLV writer length encodings.
     uint8_t buf[600];
-    apdu_resp_t r = { buf, sizeof buf, 0 };
+    apdu_resp_t r = APDU_RESP_INIT(buf, sizeof buf);
     uint8_t v[300];
     memset(v, 0xAA, sizeof v);
     resp_put_tlv(&r, 0x84, v, 127);
@@ -69,8 +70,48 @@ void test_apdu(void) {
     CHECK_EQ(buf[3], 0x2C);
     CHECK_EQ(r.len, 4 + 300);
 
-    // resp_put never overruns the buffer.
-    apdu_resp_t small = { buf, 10, 0 };
+    CHECK(!r.overflow);
+
+    // resp_put never overruns the buffer, and says so when it had to drop bytes.
+    apdu_resp_t small = APDU_RESP_INIT(buf, 10);
+    resp_put(&small, v, 9);
+    CHECK(!small.overflow);
+    resp_put_u8(&small, 1);
+    CHECK_EQ(small.len, 10);
+    CHECK(!small.overflow);                                     // exactly full is fine
+    resp_put(&small, v, 0);
+    CHECK(!small.overflow);
+    resp_put_u8(&small, 2);
+    CHECK(small.overflow);
+    CHECK_EQ(small.len, 10);
+    resp_reset(&small);
+    CHECK(!small.overflow);
+    CHECK_EQ(small.len, 0);
     resp_put(&small, v, 300);
     CHECK_EQ(small.len, 10);
+    CHECK(small.overflow);
+    resp_put_u8(&small, 3);                                     // sticky
+    CHECK(small.overflow);
+    resp_reset(&small);
+    resp_put_tlv(&small, 0x84, v, 9);                           // 2 + 9 bytes
+    CHECK(small.overflow);
+    CHECK_EQ(small.len, 10);
+
+    // The default FCI: 6F (2 + n) { 84 n AID } up to the ISO limit of 16 bytes, refused beyond.
+    uint8_t aid[17];
+    for (int i = 0; i < 17; i++) aid[i] = (uint8_t)(0xA0 + i);
+    apdu_resp_t f = APDU_RESP_INIT(buf, sizeof buf);
+    card_put_default_fci(&f, aid, 5);
+    CHECK_HEX(buf, f.len, "6F 07 84 05 A0 A1 A2 A3 A4");
+    resp_reset(&f);
+    card_put_default_fci(&f, aid, 16);
+    CHECK_EQ(f.len, 20);
+    CHECK_EQ(buf[1], 18);
+    CHECK_EQ(buf[3], 16);
+    CHECK_EQ(buf[19], 0xAF);
+    CHECK(!f.overflow);
+    resp_reset(&f);
+    card_put_default_fci(&f, aid, 17);
+    CHECK_EQ(f.len, 0);
+    CHECK(f.overflow);
 }

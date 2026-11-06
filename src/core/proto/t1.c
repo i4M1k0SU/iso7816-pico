@@ -216,7 +216,7 @@ static bool send_next_i_block(void) {
 static bool execute_command(void) {
     uint8_t *buf = dispatch_cmd_buf();
     apdu_t cmd;
-    apdu_resp_t resp = { dispatch_resp_buf(), APDU_BUF_SIZE, 0 };
+    apdu_resp_t resp = APDU_RESP_INIT(dispatch_resp_buf(), APDU_BUF_SIZE);
     uint16_t sw;
     if (s_cmd_overflow) {
         sw = SW_WRONG_LENGTH;

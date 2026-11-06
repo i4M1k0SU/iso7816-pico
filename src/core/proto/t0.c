@@ -122,7 +122,7 @@ static bool send_response(const uint8_t hdr[5], apdu_case_t kind, uint32_t le,
 }
 
 static bool run_command(const uint8_t hdr[5], apdu_t *cmd, apdu_case_t kind) {
-    apdu_resp_t resp = { dispatch_resp_buf(), APDU_BUF_SIZE, 0 };
+    apdu_resp_t resp = APDU_RESP_INIT(dispatch_resp_buf(), APDU_BUF_SIZE);
     uint16_t sw = dispatch_process(cmd, &resp);
     bool ok = send_response(hdr, kind, cmd->le, &resp, sw);
     log_apdu(dispatch_name(cmd->cla, cmd->ins), cmd->cla, cmd->ins, cmd->p1, cmd->p2, cmd->data,

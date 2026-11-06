@@ -127,7 +127,7 @@ static uint16_t run(uint16_t (*fn)(const apdu_t *, apdu_resp_t *), const char *h
     size_t n = hex_parse(hex, buf, sizeof buf);
     apdu_t a;
     if (!apdu_decode(buf, n, &a)) return 0xFFFF;
-    apdu_resp_t r = { out, sizeof out, 0 };
+    apdu_resp_t r = APDU_RESP_INIT(out, sizeof out);
     return fn(&a, &r);
 }
 

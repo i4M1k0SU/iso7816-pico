@@ -213,6 +213,42 @@ static const applet_t s_applet_g = {
     .classify = fg_classify, .select = fg_select, .deselect = fg_deselect, .reset = fg_reset,
 };
 
+// ---- applet H: responses that do not fit; applet I: an AID longer than ISO 7816-4 allows -----------------------------
+
+static const uint8_t s_aid_h[] = { 0xA0, 0x00, 0x00, 0x00, 0x08 };
+static const uint8_t s_aid_i[17] = { 0xA0, 0x00, 0x00, 0x00, 0x09 };
+static bool s_h_select_overflow;
+
+static uint16_t h_select(const apdu_t *cmd, apdu_resp_t *resp) {
+    (void)cmd;
+    if (s_h_select_overflow) {
+        for (uint32_t i = 0; i <= resp->cap; i++) resp_put_u8(resp, 0x48);
+    }
+    return SW_OK;
+}
+
+// P1 = the SW1 to return, P2 = 1: one byte more than fits.
+static uint16_t h_fill(const apdu_t *cmd, apdu_resp_t *resp) {
+    uint32_t n = resp->cap + (cmd->p2 ? 1u : 0u);
+    for (uint32_t i = 0; i < n; i++) resp_put_u8(resp, (uint8_t)i);
+    switch (cmd->p1) {
+    case 0x61: return SW_BYTES_REMAINING(0x10);
+    case 0x62: return SW_WARN_EOF;
+    case 0x63: return SW_WARN_COUNTER(1);
+    case 0x6A: return SW_WRONG_DATA;
+    default: return SW_OK;
+    }
+}
+
+static const apdu_cmd_desc_t s_cmds_h[] = {
+    APDU_CMD(0x80, 0xF0, 0x64, APDU_CASE2, "H FILL", h_fill),
+};
+
+static const applet_t s_applet_h = {
+    .name = "H", .aid = s_aid_h, .aid_len = sizeof s_aid_h, .cmds = s_cmds_h, .n_cmds = 1, .select = h_select,
+};
+static const applet_t s_applet_i = { .name = "I", .aid = s_aid_i, .aid_len = sizeof s_aid_i };
+
 // The last resort hook sees cmd->applet as well (NULL when no applet is selected on the channel).
 static const struct applet *s_unhandled_seen;
 static int s_unhandled_calls;
@@ -227,7 +263,7 @@ static uint16_t hook_unhandled(const apdu_t *cmd, apdu_resp_t *resp) {
 // ---- the profile ------------------------------------------------------------------------------------------------------
 
 static const applet_t *const s_applets[] = { &s_applet_a, &s_applet_b, &s_applet_c, &s_applet_d, &s_applet_e,
-                                             &s_applet_f, &s_applet_g };
+                                             &s_applet_f, &s_applet_g, &s_applet_h, &s_applet_i };
 
 static sec_pin_t s_pins[] = {
     { .ref = 0x01, .value = "1234", .len = 4, .min_len = 4, .max_len = 8, .max_retries = 3, .retries = 3 },
@@ -430,6 +466,51 @@ void test_select(void) {
     s_unhandled_seen = &s_applet_f;
     CHECK_EQ(sw("80 77 00 00 00"), 0x6D00);
     CHECK(s_unhandled_seen == NULL);
+
+    // --- a response that does not fit: 6F00 without data instead of an incomplete 9000 ------------------------------
+    CHECK_EQ(sw("00 A4 04 0C 05 A0 00 00 00 08"), 0x9000);
+    {
+        static uint8_t big[APDU_BUF_SIZE];
+        apdu_t c;
+        uint8_t hdr[5] = { 0x80, 0x64, 0x90, 0x00, 0x00 };
+        CHECK(apdu_decode(hdr, 4, &c));
+        apdu_resp_t out = APDU_RESP_INIT(big, sizeof big);
+        CHECK_EQ(dispatch_process(&c, &out), 0x9000);           // exactly full: fine
+        CHECK_EQ(out.len, APDU_BUF_SIZE);
+        CHECK(!out.overflow);
+        static const uint8_t sw1s[] = { 0x90, 0x61, 0x62, 0x63 };
+        for (size_t i = 0; i < sizeof sw1s; i++) {
+            hdr[2] = sw1s[i];
+            hdr[3] = 0x01;
+            CHECK(apdu_decode(hdr, 4, &c));
+            unsigned lines = g_log_lines;
+            CHECK_EQ(dispatch_process(&c, &out), 0x6F00);
+            CHECK_EQ(out.len, 0);
+            CHECK_EQ(g_log_lines, lines + 1);
+            CHECK(strcmp(g_log_last, "H FILL: response overflow (cap 4096)") == 0);
+        }
+        hdr[2] = 0x6A;                                          // an error SW stays as it is (no data is sent)
+        CHECK(apdu_decode(hdr, 4, &c));
+        CHECK_EQ(dispatch_process(&c, &out), 0x6A80);
+        // The flag of a previous command does not leak into the next one.
+        hdr[2] = 0x90;
+        hdr[3] = 0x00;
+        CHECK(apdu_decode(hdr, 4, &c));
+        CHECK_EQ(dispatch_process(&c, &out), 0x9000);
+    }
+    CHECK_EQ(sw("80 64 90 01 00"), 0x6F00);                     // through T=0
+    CHECK_EQ(r.len, 0);
+    // An FCI that does not fit fails the SELECT: the applet is not selected.
+    s_h_select_overflow = true;
+    CHECK_EQ(sw("00 A4 04 00 05 A0 00 00 00 08"), 0x6F00);
+    CHECK(strcmp(g_log_last, "H: response overflow (cap 4096)") == 0);
+    CHECK_EQ(r.len, 0);
+    CHECK_EQ(sw("80 64 90 00 00"), 0x6D00);
+    s_h_select_overflow = false;
+    // A 17-byte AID: no malformed default FCI, the SELECT fails.
+    CHECK_EQ(sw("00 A4 04 00 05 A0 00 00 00 09"), 0x6F00);
+    CHECK_EQ(r.len, 0);
+    CHECK(strcmp(g_log_last, "I: response overflow (cap 4096)") == 0);
 
     // --- T=1: GET RESPONSE / ENVELOPE reach the dispatcher ------------------------------------------------------------
     session(true);

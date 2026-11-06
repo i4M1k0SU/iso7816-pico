@@ -54,7 +54,7 @@ void dispatch_reset(void) {
     // becomes current and its select() runs.  Nothing is sent to the reader, so the response buffer is free here.
     const applet_t *a = card_profile->default_applet;
     if (a) {
-        apdu_resp_t resp = { s_resp_buf, APDU_BUF_SIZE, 0 };
+        apdu_resp_t resp = APDU_RESP_INIT(s_resp_buf, APDU_BUF_SIZE);
         implicit_select(0, a, NULL, &resp);
     }
 }
@@ -166,11 +166,20 @@ bool dispatch_cla_mismatch(const apdu_t *cmd) {
 // applet selection
 // ---------------------------------------------------------------------------
 
+// 6F (2 + n) { 84 n AID }.  An AID has at most 16 bytes (ISO 7816-4 8.2.1.2), so both lengths fit in one byte.  A
+// longer one is a profile error: it is logged and the response is flagged as overflowing, so the SELECT fails with
+// 6F00 instead of answering a malformed FCI.
 void card_put_default_fci(apdu_resp_t *resp, const uint8_t *aid, size_t aid_len) {
-    uint8_t body[2 + 16];
-    apdu_resp_t b = { body, sizeof body, 0 };
-    resp_put_tlv(&b, 0x84, aid, aid_len);
-    resp_put_tlv(resp, 0x6F, body, b.len);
+    if (aid_len > 16) {
+        log_printf("default FCI: AID of %u bytes, ISO 7816-4 allows at most 16", (unsigned)aid_len);
+        resp->overflow = true;
+        return;
+    }
+    resp_put_u8(resp, 0x6F);
+    resp_put_u8(resp, (uint8_t)(2 + aid_len));
+    resp_put_u8(resp, 0x84);
+    resp_put_u8(resp, (uint8_t)aid_len);
+    resp_put(resp, aid, aid_len);
 }
 
 static void deselect_applet(uint8_t ch) {
@@ -229,6 +238,11 @@ static uint16_t activate_applet(uint8_t ch, const applet_t *a, const apdu_t *cmd
         sw = a->select(&c, resp);
     }
     else if ((cmd->p2 & 0x0C) != 0x0C) card_put_default_fci(resp, a->aid, a->aid_len);
+    if (select_succeeded(sw) && resp->overflow) {
+        // An incomplete FCI is not a successful selection.
+        log_printf("%s: response overflow (cap %u)", a->name ? a->name : "applet", (unsigned)resp->cap);
+        sw = SW_UNKNOWN;
+    }
     if (select_succeeded(sw)) return sw;
 
     s_ch[ch].applet = NULL;
@@ -246,7 +260,7 @@ static uint16_t implicit_select(uint8_t ch, const applet_t *a, const fs_cursor_t
         .data = a->aid, .lc = a->aid_len, .channel = ch, .interindustry = true, .applet = a,
     };
     uint16_t sw = activate_applet(ch, a, &cmd, resp, start);
-    resp->len = 0;
+    resp_reset(resp);
     if (sw != SW_OK) {
         log_printf("%s: implicit selection on channel %u: SW %04X%s", a->name ? a->name : "applet", (unsigned)ch,
                    (unsigned)sw, s_ch[ch].applet ? "" : ", not selected");
@@ -372,9 +386,23 @@ static uint16_t route(const apdu_t *cmd, apdu_resp_t *resp) {
     return dispatch_cla_mismatch(cmd) ? SW_CLA_NOT_SUPPORTED : SW_INS_NOT_SUPPORTED;
 }
 
+// SW after which the response data is sent (ISO 7816-4 5.6: normal processing and warnings).
+static bool sw_has_data(uint16_t sw) {
+    uint8_t sw1 = (uint8_t)(sw >> 8);
+    return sw == SW_OK || sw1 == 0x61 || sw1 == 0x62 || sw1 == 0x63;
+}
+
+// A handler whose response did not fit must not report success with part of it: 6F00, no data.
+static uint16_t check_overflow(const apdu_t *cmd, apdu_resp_t *resp, uint16_t sw) {
+    if (!resp->overflow || !sw_has_data(sw)) return sw;
+    log_printf("%s: response overflow (cap %u)", dispatch_name(cmd->cla, cmd->ins), (unsigned)resp->cap);
+    resp_reset(resp);
+    return SW_UNKNOWN;
+}
+
 uint16_t dispatch_process(const apdu_t *in, apdu_resp_t *resp) {
     apdu_t cmd = *in;
-    resp->len = 0;
+    resp_reset(resp);
     decode_cla(in->cla, &cmd);
     cmd.applet = NULL;
 
@@ -421,6 +449,10 @@ uint16_t dispatch_process(const apdu_t *in, apdu_resp_t *resp) {
 
     uint16_t sw = route(&cmd, resp);
     if (sw == APDU_UNHANDLED) sw = SW_UNKNOWN;
-    if (cmd.sm && card_profile->hooks.sm_wrap) sw = card_profile->hooks.sm_wrap(&cmd, resp, sw);
+    sw = check_overflow(&cmd, resp, sw);
+    if (cmd.sm && card_profile->hooks.sm_wrap) {
+        sw = card_profile->hooks.sm_wrap(&cmd, resp, sw);
+        sw = check_overflow(&cmd, resp, sw);
+    }
     return sw;
 }
