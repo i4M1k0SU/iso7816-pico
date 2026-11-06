@@ -90,3 +90,7 @@ Pico なしで動くホスト側テスト (`tests/`) と GitHub Actions の CI �
 | [docs/card-profile.md](docs/card-profile.md) | カードプロファイルとアプレットの書き方、ハンドラから使用できる API |
 | [docs/internals.md](docs/internals.md) | 動作原理、セッションとディスパッチの流れ、実装済み機能、はまりどころ、既知の制限 |
 | [docs/tools.md](docs/tools.md) | ビルド・書き込み、無操作 BOOTSEL の 5 通り、PC/SC テスト、コンソールコマンド |
+
+## ライセンス
+
+[MIT LICENSE](LICENSE)
