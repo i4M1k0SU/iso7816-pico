@@ -103,6 +103,7 @@ void session_run(void) {
     dispatch_reset();
     if (card_profile->hooks.on_atr) card_profile->hooks.on_atr();
     t0_session_begin();
+    t0_set_wi(s_info.wi);
     t1_config_t t1c = { s_info.ifsc, s_info.crc };
     t1_session_begin(&t1c);
 
