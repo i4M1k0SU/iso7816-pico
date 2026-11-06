@@ -118,6 +118,15 @@ typedef struct {
     // a new value in one data field split them there).  NULL = store and compare the plain value.
     size_t (*pin_transform)(const sec_pin_t *pin, const uint8_t *in, size_t len, uint8_t *out, size_t cap);
 
+    // --- persistence ------------------------------------------------------------------------------------------------
+    // The newest image in flash was written with another layout id (old_layout = NVM_LAYOUT_FRAMEWORK << 16 |
+    // nvm_version of the firmware that wrote it; 0 for an image from before layout ids existed) or another size.
+    // old_blob (old_size bytes, read-only, in flash, 8-byte aligned) is that image; nvm_blob still holds the defaults.
+    // Convert what can be kept into nvm_blob and return true to use it (it is saved soon after), or return false
+    // without touching nvm_blob to start from the defaults.  NULL = always the defaults.  Runs at boot, before the
+    // file system and the PINs are initialised.
+    bool (*nvm_migrate)(uint32_t old_layout, const void *old_blob, size_t old_size);
+
     // --- misc -----------------------------------------------------------------
     void (*random_bytes)(uint8_t *out, size_t n);   // default: hardware RNG
 } card_hooks_t;
@@ -170,6 +179,9 @@ typedef struct {
     // --- persistence -----------------------------------------------------------
     void *nvm_blob;                 // RAM image saved to flash when marked dirty
     size_t nvm_size;
+    // Layout version of the blob: bump it whenever the struct behind nvm_blob changes, so that the images written by
+    // the previous firmware are not reinterpreted (they go to hooks.nvm_migrate, or the defaults are used).
+    uint16_t nvm_version;
 
     // --- console ---------------------------------------------------------------
     const console_cmd_t *console_cmds;   // extra console commands (NULL = none)

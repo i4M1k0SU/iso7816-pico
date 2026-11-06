@@ -12,11 +12,25 @@
 // slot with the highest sequence number, so a save interrupted by a power loss leaves the previous image intact.  A
 // save whose image equals the stored one is skipped altogether.  That guarantee needs at least two slots, so a blob
 // for which the region offers only one (NVM_BLOB_FITS() false) is refused by nvm_load() and nvm_save().
+//
+// Layout id: the header records which layout the blob was written with, nvm_layout_id() =
+// NVM_LAYOUT_FRAMEWORK << 16 | card_profile->nvm_version.  nvm_load() takes the newest valid image only when its
+// layout id and size are the ones of this firmware; otherwise it hands it to card_profile->hooks.nvm_migrate (if set)
+// or keeps the defaults, logs both layout ids and marks the blob dirty so that the new image supersedes the old one.
+// Images of the first header format (16 bytes, no layout id) count as layout 0.
 #pragma once
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
+// Layout version of the framework-owned structs that live inside the application's blob (today sec_pin_t, see
+// iso7816_pico/sec.h).  Bump it whenever one of them changes size or meaning: every deployed card then sees a layout
+// change at the next boot (migration hook or defaults) instead of reinterpreting the old bytes.
+#define NVM_LAYOUT_FRAMEWORK 1u
+
+// The layout id this firmware writes and accepts.
+uint32_t nvm_layout_id(void);
 
 typedef enum {
     NVM_SAVE_FAILED,      // flash error or the blob does not fit in one slot
@@ -29,10 +43,19 @@ typedef struct {
     uint32_t slot;        // slot holding the current image
     uint32_t seq;         // its sequence number
     uint32_t slots;       // number of slots the region offers for this blob size
+    // Set by nvm_load(): the newest image in flash (stored_*; 0 when there is none) and what became of it when its
+    // layout id or size was not this firmware's (layout_changed): migrated by hooks.nvm_migrate, or defaults.
+    uint32_t stored_layout;
+    uint32_t stored_size;
+    bool layout_changed;
+    bool migrated;
 } nvm_status_t;
 
-// Copy the newest valid stored image into blob.  Returns false (blob untouched) when the flash holds no image of this
-// size.
+// Load the profile's blob (blob / size are card_profile->nvm_blob / nvm_size): copy the newest valid stored image
+// into it when it has this firmware's layout id and size, and return true.  When the newest image has another layout
+// id or size, card_profile->hooks.nvm_migrate (if set) gets it; if the hook returns true, the image it wrote into the
+// blob is used (true, marked dirty).  Otherwise the blob keeps its defaults (false, marked dirty, logged).  False with
+// the blob untouched when the flash holds no image at all.
 bool nvm_load(void *blob, size_t size);
 
 // Write the image to the next slot unless it is identical to the stored one.  On the Pico, interrupts are off for a

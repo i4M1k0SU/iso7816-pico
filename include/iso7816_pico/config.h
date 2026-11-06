@@ -82,11 +82,11 @@
 #define NVM_IDLE_SAVE_MS  200
 #endif
 
-// Slot size for a blob of `size` bytes (16-byte header + blob, rounded up to 4 KB sectors), and whether the region
+// Slot size for a blob of `size` bytes (24-byte header + blob, rounded up to 4 KB sectors), and whether the region
 // holds the two slots the journal needs: with a single slot a save would have to erase the only image before
 // rewriting it, so such a blob is refused (not persisted).  Usable in a static assertion, e.g.
 //   _Static_assert(NVM_BLOB_FITS(sizeof(my_nvm_t)), "NVM blob too large for NVM_FLASH_BYTES");
-#define NVM_SLOT_BYTES(size) ((((size) + 16u) + 4095u) / 4096u * 4096u)
+#define NVM_SLOT_BYTES(size) ((((size) + 24u) + 4095u) / 4096u * 4096u)
 #define NVM_BLOB_FITS(size)  (NVM_SLOT_BYTES(size) * 2u <= (NVM_FLASH_BYTES))
 
 // ---- Misc ---------------------------------------------------------------------------------------------------------
