@@ -85,6 +85,9 @@ USB や他の周辺機器を同じループで回したいときは `card_runtim
 利用側のソースから使うヘッダはすべて `#include "iso7816_pico/..."` である。
 
 最小構成の例は [tests/embed/main.c](../tests/embed/main.c) にある (ATR 1 つ、アプレット 1 つ、ファイルシステムなし)。
+ハンドラは `cmd->applet->ctx` でアプレットごとの状態を、`reset` / `deselect` は第 1 引数 `self` で自分を受け取る。
+この形にした非互換変更 (アプレット文脈、応答あふれ時の 6F00、NVM のレイアウト版) と移行の手順は
+[card-profile.md](card-profile.md) の「非互換変更」にまとめてある。
 `tests/embed/CMakeLists.txt` は上の手順そのもので、CI がこれをビルドして組み込み方法が壊れていないことを確認する。
 
 ## 5. ビルドと書き込み

@@ -38,12 +38,14 @@
    ATR が特定モード (TA2 あり) なら PPS には応じず、ATR 送出の直後に `phy_apply_params()` で TA1 の F/D へ切り替える。
 3. `session.c` が T=0 (`t0.c`) または T=1 (`t1.c`) のコマンドループを回す。
 4. 両トランスポートは完全な APDU を組み立てて `dispatch_process()` に渡し、SW と応答データを受け取る。
+   ディスパッチャは `cmd->applet` (そのチャネルで選択中のアプレット) を設定してから振り分け、ハンドラが成功 SW を
+   返したのに応答が `APDU_BUF_SIZE` からあふれていれば (`resp->overflow`)、データなしの 6F00 に置き換える。
 5. コマンド待ちのアイドル処理 (`phy_rx()` の `idle` 引数で呼ばれる `idle_service()`) は、NVM が dirty で文字の送受信が
    `NVM_IDLE_SAVE_MS` (200 ms) 途絶えていれば保存する。T=1 では保存中 (50-100 ms、割り込み停止) に届いたブロックが
    8 段の受信 FIFO からあふれうるが、リーダーの再送で回復する。あふれは `status` の `rx overrun` とログ
    (`PHY: RX FIFO overrun`) に出る。PIN / PUK の試行回数は `sec.c` が照合前に同期で保存する。
-6. RST Low で `phy_enter_reset()`、NVM がまだ dirty なら保存 (内容が変わっていなければ書かない。スロット方式の詳細は
-   [card-profile.md](card-profile.md) の「永続データ」)。
+6. RST Low で `phy_enter_reset()`、NVM がまだ dirty なら保存 (内容が変わっていなければ書かない。スロット方式と
+   レイアウト ID の詳細は [card-profile.md](card-profile.md) の「永続データ」)。
 
 ### T=0 の ENVELOPE の終端
 
@@ -70,6 +72,12 @@ T=0 では拡張長 APDU を ENVELOPE (INS C2) に分けて送る。ISO 7816-4 �
 
 応答データのないケース 2 コマンド (ハンドラーが Nr = 0 で 9000 などを返す) には ACK を送らず SW1 SW2 だけを返す。6Cxx は
 La > 0 を知らせるものであり (6C00 は La = 256 を意味する)、Nr = 0 には使えない。
+
+### T=1 のケース 1 / 3 コマンドの応答データ
+
+T=1 では、ケース 1 / 3 のコマンド (Le なし) でもハンドラーが応答データを積めば、成功 SW (9000 / 61xx / 62xx / 63xx)
+とともにそのまま送る (Le があればその長さで切る)。ISO 7816-4 の Ne = 0 には反するが、T=0 で同じコマンドが 61xx で
+データを知らせるのと揃えるために、この寛容な動作を意図して残している。
 
 ### T=1 の誤り処理
 
