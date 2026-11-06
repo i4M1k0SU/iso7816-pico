@@ -25,8 +25,9 @@ static void demo_reset(void) {
     // s_counter deliberately survives a warm reset.
 }
 
-// SELECT by AID.  The dispatcher already made the DF with the same name current; here we also make its first EF current
-// so that READ BINARY works right away, and answer with the default FCI.
+// SELECT by AID, and the implicit selection after every ATR (this is the default applet).  The dispatcher already made
+// the DF with the same name current; here we also make its first EF current so that READ BINARY works right away, and
+// answer with the default FCI.  Returning an error instead would leave no applet selected on the channel.
 static uint16_t demo_select(const apdu_t *cmd, apdu_resp_t *resp) {
     fs_cursor_t *c = fs_cursor(cmd->channel);
     const fs_file_t *ef = fs_child(c->df, 0x0101);
@@ -107,6 +108,8 @@ const applet_t demo_applet = {
     .n_cmds = sizeof s_cmds / sizeof s_cmds[0],
     .select = demo_select,
     .deselect = NULL,
-    .process = NULL,      // everything is in the table; ISO commands fall through
+    .classify = NULL,     // every command is in the table, which also gives the T=0 case
+    .process = NULL,      // everything is in the table; ISO commands fall through.  A switch on INS here instead
+                          // needs .classify as well, or T=0 drops the data field of the commands not in the table
     .reset = demo_reset,
 };

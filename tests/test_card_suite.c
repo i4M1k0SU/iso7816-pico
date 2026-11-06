@@ -102,6 +102,11 @@ static void suite(bool t1) {
     step("SELECT EF 0104", "00 A4 02 0C 02 01 04", 0x9000, NULL, 0);
     step("READ RECORD (PIN 81)", "00 B2 01 04 00", 0x6982, NULL, -1);
     step("VERIFY PIN 81", "00 20 00 81 04 30 30 30 30", 0x9000, NULL, -1);
+    // UPDATE RECORD does not create records: the first pass over a fresh card appends record 1 (as sc_test does).
+    uint8_t rd[] = { 0x00, 0xB2, 0x01, 0x04, 0x00 };
+    if (s_xmit(rd, sizeof rd, &s_r) && s_r.sw == 0x6A83) {
+        step("APPEND RECORD (var, empty)", "00 E2 00 00 03 61 62 63", 0x9000, NULL, -1);
+    }
     step("UPDATE RECORD 1 (var)", "00 DC 01 04 03 61 62 63", 0x9000, NULL, -1);
     step("READ RECORD 1 (var)", "00 B2 01 04 00", 0x9000, "61 62 63", -1);
 

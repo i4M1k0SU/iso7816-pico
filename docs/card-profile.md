@@ -76,10 +76,22 @@ EF の本体や `sec_pin_t` の配列はこの構造体の中に置く。構造�
 | `name`, `name_len` | DF 名 (AID)。アプレットの AID と同じ名前の DF は、そのアプレット選択時にカレント DF になる |
 | `data`, `size` | EF 本体。レコード EF は先頭 4 バイトがヘッダ (`FS_REC_HDR(使用数, 先頭スロット)`)、`FS_LINEAR_FIXED_BYTES()` 等でサイズを計算する |
 | `rec_size` | レコード長 (可変長なら最大長) |
-| `sfi` | ショート EF 識別子 (1..30)。READ BINARY の P1 b8 / READ RECORD の P2 で参照する |
+| `sfi` | ショート EF 識別子 (1..30、0 は「なし」)。READ BINARY の P1 b8 / READ RECORD の P2 で参照する |
 | `ac_read`, `ac_update` | アクセス条件: `FS_AC_ALWAYS`, `FS_AC_NEVER`, または必要な PIN の参照番号 (VERIFY の P2) |
 
 アクセス条件は論理チャネルごとのセキュリティ状態で評価される。より複雑な規則は `hooks.check_access` で置き換える。
+
+ショート EF 識別子として有効なのは 1..30 だけである。BINARY 系コマンドの P1 = 80 (SFI 0) と 9F (SFI 31)、
+RECORD 系コマンドの P2 b8..b4 = 31 は 6A86 (P1-P2 誤り) になる。RECORD 系の P2 b8..b4 = 0 はカレント EF を指す。
+SFI を持たない EF (`sfi = 0`) は SFI では参照できない (`fs_by_sfi(df, 0)` は NULL を返す)。
+
+レコードを読み書きするコマンドは、存在するレコードだけを対象にする。
+
+* 固定長 EF は全レコードが最初から存在する。UPDATE / WRITE RECORD は容量までの任意の番号に書ける。
+* 可変長 EF とサイクリック EF のレコードは APPEND RECORD (E2) で追加したものだけである (ヘッダの使用数まで)。
+  UPDATE / WRITE RECORD で使用数を超える番号や「次」を指定すると 6A83 になり、使用数も記録ポインタも変わらない。
+  デモの可変長 EF 0104 は空で始まるので、最初の 1 件は APPEND RECORD で作る。
+* `fs_record_write()` も同じ規則で既存のレコードだけを上書きし、レコードを増やすのは `fs_record_append()` だけである。
 
 ## 4. PIN
 
@@ -96,11 +108,29 @@ DATA、ENABLE/DISABLE VERIFICATION の PIN 照合と RESET RETRY COUNTER の PUK
 keep-alive は送らない。保存に失敗した場合はログに出し、回数は RAM 上で数え続ける (後のアイドル時保存で再試行する)。
 正しい PIN で回数を戻した変更は通常のアイドル時保存で書くので、照合 1 回につき最大 2 回の書き込みになる。
 
+試行回数を減らす前に、データ欄の長さをすべて検査する。形の誤ったコマンドは 6700 を返し、回数を消費しない。
+
+| コマンド | 回数を減らす前に 6700 とする条件 |
+|---------|-------------------------------|
+| VERIFY (P1 = 00) | PIN が `SEC_PIN_MAX_LEN` より長い (`pin_transform` と `plain_len` があれば `plain_len` と異なる)。空のデータ欄は照合せず状態を返す |
+| ENABLE / DISABLE VERIFICATION (P1 = 00) | データ欄が空、または VERIFY と同じ長さ条件。P1 = 01 はデータ欄があると 6700 |
+| CHANGE REFERENCE DATA (P1 = 00) | 旧 PIN の後ろに新 PIN がない、新 PIN が `min_len` / `max_len` / `SEC_PIN_MAX_LEN` の範囲外。新 PIN を `pin_transform` が拒めば 6A80 (これも照合前) |
+| RESET RETRY COUNTER (P1 = 00) | PUK の後ろに新 PIN がない、新 PIN の長さが範囲外 (CHANGE REFERENCE DATA と同じ) |
+| RESET RETRY COUNTER (P1 = 01) | データ欄が PUK の長さと異なる (余分なバイトも不可) |
+| RESET RETRY COUNTER (P1 = 02 / 03) | 02 は新 PIN の長さが範囲外、03 はデータ欄がある (どちらも回数は使わず、照合済みが必要) |
+
+格納できる値の長さは `SEC_PIN_MAX_LEN` (`config.h`、既定 16)、PIN の数は `SEC_MAX_PINS` (`sec.h`、32。セキュリティ状態を
+PIN ごとに 1 ビットで持つため) が上限である。起動時の `sec_init()` は、PIN が多すぎるプロファイル (先頭の 32 個だけを使う) と、
+`len` / `puk_len` / `max_len` が `SEC_PIN_MAX_LEN` を超える PIN をログに出す。
+
 PIN と PUK は既定では平文のまま NVM に置かれる。平文を残したくない場合は `hooks.pin_transform` を実装する。
 格納時 (CHANGE REFERENCE DATA、RESET RETRY COUNTER) と照合時 (VERIFY、PUK) の両方で値がこの関数を通るので、
 ソルト付きハッシュなどを返せばフラッシュには変換後の値しか残らない。その場合、プロファイルに書く初期値は変換後の形で、
 `sec_pin_t.plain_len` に PIN と PUK の平文長 (固定) を入れる (旧 PIN + 新 PIN のように 1 つのデータ欄に 2 つの値が入るコマンドを
-そこで分割する)。
+そこで分割する)。`plain_len` があると、照合する値も新しい PIN もこの長さでなければ 6700 になる。
+`pin_transform` があって `plain_len` が 0 の PIN はプロファイルの誤りで、起動時にログに出る。分割できない
+CHANGE REFERENCE DATA P1 = 00 と RESET RETRY COUNTER P1 = 00 / 01 は、端末の誤りではないので 6700 ではなく 6F00 を返し、
+回数を消費しない (VERIFY は分割が要らないのでそのまま使える)。
 
 ## 5. アプレット
 
@@ -118,6 +148,7 @@ const applet_t my_applet = {
     .cmds = s_cmds, .n_cmds = 2,
     .select = NULL,      // NULL なら 6F len { 84 len AID } を返す
     .process = NULL,     // 表にないコマンドの受け皿 (switch で書く場合)。APDU_UNHANDLED を返すと次の層へ
+    .classify = NULL,    // process で扱うコマンドの T=0 case (switch で書く場合は必須)
     .reset = NULL,       // ATR ごとの初期化
 };
 ```
@@ -127,10 +158,42 @@ const applet_t my_applet = {
 * **T=0 の case** を表に書くのは、T=0 ではヘッダだけから P3 が Lc か Le か判断できないためである。
   61xx / 6Cxx / GET RESPONSE / 再発行時の応答保持 (コマンドを 2 回実行しない) はフレームワークが行う。
   T=1 と拡張長 APDU では case は自動判定である。
+* コマンドを表に書かず `process` の switch で解読するアプレットは、`.classify` も用意する。表にない INS は T=0 では
+  case 1 扱い (P3 を無視し、データ部を受信しない) になるので、`classify` がないとデータ部が失われる。`classify` は
+  CLA が指すチャネルで選択中のアプレットについて、その表の次、標準コマンド表と `hooks.classify` の前に参照される。
+  自分のコマンドでなければ `APDU_CASE_UNKNOWN` を返す。
+
+  ```c
+  static apdu_case_t my_classify(uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2) {
+      if ((cla & 0xF0) != 0x80) return APDU_CASE_UNKNOWN;
+      switch (ins) {
+      case 0x42: return APDU_CASE3;   // データを受け取る
+      case 0x44: return APDU_CASE4;   // データを受け取り、返す
+      default:   return APDU_CASE_UNKNOWN;
+      }
+  }
+  ```
+* `select` は SELECT のたびに呼ばれ、名前が AID と同じ DF があればそれがカレント DF になった状態で呼ばれる。9000 か
+  警告 (62xx / 63xx) を返せば選択が成立する。それ以外の SW を返すと選択は不成立で、そのチャネルではどのアプレットも
+  選択されていない状態になる (前のアプレットは `deselect` 済み、セキュリティ状態は消去、カレントファイルは SELECT 前の
+  まま、応答データは捨てる)。以後のコマンドはアプレットに届かない。
 * `.default_applet` に指定したアプレットは ATR 直後から暗黙に選択されている。SELECT なしでコマンドを受けるカードはこれで作る。
+  暗黙選択でも `select` は呼ばれる (SELECT by DF name、P2 = 0C の合成コマンドを渡し、応答は捨てる。9000 以外ならログに
+  出す)。したがって `select` で行う準備 (デモではカレント EF の設定) は ATR 直後から効いている。
   MF から直接 READ BINARY 等を受けるカードは `default_applet = NULL` + `iso_commands = true` で作る。
+* MANAGE CHANNEL でチャネルを開くと、基本チャネルから開いた場合は既定アプレット (なければ MF) が、他のチャネルから
+  開いた場合はそのチャネルのアプレットとカレント DF / EF が新しいチャネルで選択される (ISO 7816-4)。どちらの場合も新しい
+  チャネルで `select` が呼ばれ、失敗すればチャネルは開かずその SW を返す。他のチャネルから開いた場合のカレントファイルは
+  `select` の後で元のチャネルのものに戻す。セキュリティ状態は引き継がない。
 * アプレットが扱わなかったコマンド (表にない / `APDU_UNHANDLED`) は、`iso_commands` が真なら標準コマンドへ、
-  それでも残れば `hooks.unhandled` へ、最後に `6D00` (INS 不明) または `6E00` (他の CLA にその INS がある) になる。
+  それでも残れば `hooks.unhandled` へ、最後に `6D00` (INS 不明) または `6E00` (CLA 違い) になる。`6E00` になるのは、
+  そのチャネルで選択中のアプレットの表か標準コマンド (`iso_commands` が真のとき)、または SELECT / MANAGE CHANNEL に、
+  別の CLA でその INS のハンドラがある場合だけである。ハンドラのない (分類だけの) 表の項目、選択されていないアプレットの
+  コマンド、`process` の switch の中のコマンドは数えない。
+* ファイルシステムのないプロファイル (`files = NULL`) でも `iso_commands` が真なら、SELECT は 6A82、カレント EF を
+  対象とする READ BINARY / READ RECORD 等は 6986、短縮 EF 識別子付きのものは 6A82 を返す。
+* T=1 では GET RESPONSE (`00 C0`) と ENVELOPE (`00 C2`) もディスパッチャに届く。アプレットやフックが扱わなければ、
+  GET RESPONSE は 6985 (T=0 で取り出す応答がないときと同じ)、ENVELOPE は 6D00 である。
 
 ## 6. フック (`card_profile.hooks`)
 
@@ -138,7 +201,7 @@ const applet_t my_applet = {
 |--------|-------------|---------|
 | `on_atr`, `on_deactivate` | ATR 送出後 / RST Low | なし |
 | `check_access`, `on_select`, `on_file_changed` | ACL 評価 / ファイル選択 / 書き換え後 | PIN 規則 / なし |
-| `classify` | T=0 で表にない INS の case 判定 | case 1 扱い |
+| `classify` | T=0 で表にもアプレットの `classify` にもない INS の case 判定 | case 1 扱い |
 | `unhandled` | 誰も処理しなかったコマンド | 6D00 / 6E00 |
 | `get_data`, `put_data` | 00 CA / 00 DA | 6A81 |
 | `internal_authenticate`, `external_authenticate` | 00 88 / 00 82 (GET CHALLENGE の値は `sec_last_challenge()`) | 6A81 |

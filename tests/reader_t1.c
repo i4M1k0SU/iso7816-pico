@@ -55,7 +55,7 @@ void t1r_begin(uint8_t ifsc) {
     s_blocks = s_wtx = 0;
     s_ifsc = ifsc;
     s_ns = 0;
-    t1_config_t cfg = { ifsc, false };
+    t1_config_t cfg = { ifsc, false, 13 };
     t1_session_begin(&cfg);
 }
 
@@ -79,6 +79,12 @@ uint32_t t1r_wtx_requests(void) { return s_wtx; }
 void t1r_set_ifsd(uint8_t ifsd) {
     uint8_t raw[4] = { 0x00, 0xC1, 0x01, ifsd };
     t1r_exchange(raw, 4);
+}
+
+void t1r_resynch(void) {
+    uint8_t raw[3] = { 0x00, 0xC0, 0x00 };
+    t1r_exchange(raw, 3);
+    s_ns = 0;
 }
 
 static bool is_i(uint8_t pcb) { return !(pcb & 0x80); }

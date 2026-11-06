@@ -14,16 +14,18 @@
 
 bool g_verbose_log;
 uint8_t g_fake_protocol;
+unsigned g_log_lines;
+char g_log_last[200];
 static bool s_bootsel;
 static uint32_t s_rand = 0x12345678u;
 
 void log_printf(const char *fmt, ...) {
-    if (!g_verbose_log) return;
     va_list ap;
     va_start(ap, fmt);
-    vprintf(fmt, ap);
+    vsnprintf(g_log_last, sizeof g_log_last, fmt, ap);
     va_end(ap);
-    printf("\n");
+    g_log_lines++;
+    if (g_verbose_log) printf("%s\n", g_log_last);
 }
 
 void log_apdu(const char *name, uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2, const uint8_t *in, size_t in_len,
