@@ -63,6 +63,7 @@ int main(int argc, char **argv) {
     run_test("t0", test_t0);
     run_test("t1", test_t1);
     run_test("dispatch", test_dispatch);
+    run_test("select", test_select);
     run_test("fs", test_fs);
     run_test("nvm", test_nvm);
     run_test("nvm pin durability", test_nvm_pin_durability);

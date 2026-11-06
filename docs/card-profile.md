@@ -118,6 +118,7 @@ const applet_t my_applet = {
     .cmds = s_cmds, .n_cmds = 2,
     .select = NULL,      // NULL なら 6F len { 84 len AID } を返す
     .process = NULL,     // 表にないコマンドの受け皿 (switch で書く場合)。APDU_UNHANDLED を返すと次の層へ
+    .classify = NULL,    // process で扱うコマンドの T=0 case (switch で書く場合は必須)
     .reset = NULL,       // ATR ごとの初期化
 };
 ```
@@ -127,10 +128,42 @@ const applet_t my_applet = {
 * **T=0 の case** を表に書くのは、T=0 ではヘッダだけから P3 が Lc か Le か判断できないためである。
   61xx / 6Cxx / GET RESPONSE / 再発行時の応答保持 (コマンドを 2 回実行しない) はフレームワークが行う。
   T=1 と拡張長 APDU では case は自動判定である。
+* コマンドを表に書かず `process` の switch で解読するアプレットは、`.classify` も用意する。表にない INS は T=0 では
+  case 1 扱い (P3 を無視し、データ部を受信しない) になるので、`classify` がないとデータ部が失われる。`classify` は
+  CLA が指すチャネルで選択中のアプレットについて、その表の次、標準コマンド表と `hooks.classify` の前に参照される。
+  自分のコマンドでなければ `APDU_CASE_UNKNOWN` を返す。
+
+  ```c
+  static apdu_case_t my_classify(uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2) {
+      if ((cla & 0xF0) != 0x80) return APDU_CASE_UNKNOWN;
+      switch (ins) {
+      case 0x42: return APDU_CASE3;   // データを受け取る
+      case 0x44: return APDU_CASE4;   // データを受け取り、返す
+      default:   return APDU_CASE_UNKNOWN;
+      }
+  }
+  ```
+* `select` は SELECT のたびに呼ばれ、名前が AID と同じ DF があればそれがカレント DF になった状態で呼ばれる。9000 か
+  警告 (62xx / 63xx) を返せば選択が成立する。それ以外の SW を返すと選択は不成立で、そのチャネルではどのアプレットも
+  選択されていない状態になる (前のアプレットは `deselect` 済み、セキュリティ状態は消去、カレントファイルは SELECT 前の
+  まま、応答データは捨てる)。以後のコマンドはアプレットに届かない。
 * `.default_applet` に指定したアプレットは ATR 直後から暗黙に選択されている。SELECT なしでコマンドを受けるカードはこれで作る。
+  暗黙選択でも `select` は呼ばれる (SELECT by DF name、P2 = 0C の合成コマンドを渡し、応答は捨てる。9000 以外ならログに
+  出す)。したがって `select` で行う準備 (デモではカレント EF の設定) は ATR 直後から効いている。
   MF から直接 READ BINARY 等を受けるカードは `default_applet = NULL` + `iso_commands = true` で作る。
+* MANAGE CHANNEL でチャネルを開くと、基本チャネルから開いた場合は既定アプレット (なければ MF) が、他のチャネルから
+  開いた場合はそのチャネルのアプレットとカレント DF / EF が新しいチャネルで選択される (ISO 7816-4)。どちらの場合も新しい
+  チャネルで `select` が呼ばれ、失敗すればチャネルは開かずその SW を返す。他のチャネルから開いた場合のカレントファイルは
+  `select` の後で元のチャネルのものに戻す。セキュリティ状態は引き継がない。
 * アプレットが扱わなかったコマンド (表にない / `APDU_UNHANDLED`) は、`iso_commands` が真なら標準コマンドへ、
-  それでも残れば `hooks.unhandled` へ、最後に `6D00` (INS 不明) または `6E00` (他の CLA にその INS がある) になる。
+  それでも残れば `hooks.unhandled` へ、最後に `6D00` (INS 不明) または `6E00` (CLA 違い) になる。`6E00` になるのは、
+  そのチャネルで選択中のアプレットの表か標準コマンド (`iso_commands` が真のとき)、または SELECT / MANAGE CHANNEL に、
+  別の CLA でその INS のハンドラがある場合だけである。ハンドラのない (分類だけの) 表の項目、選択されていないアプレットの
+  コマンド、`process` の switch の中のコマンドは数えない。
+* ファイルシステムのないプロファイル (`files = NULL`) でも `iso_commands` が真なら、SELECT は 6A82、カレント EF を
+  対象とする READ BINARY / READ RECORD 等は 6986、短縮 EF 識別子付きのものは 6A82 を返す。
+* T=1 では GET RESPONSE (`00 C0`) と ENVELOPE (`00 C2`) もディスパッチャに届く。アプレットやフックが扱わなければ、
+  GET RESPONSE は 6985 (T=0 で取り出す応答がないときと同じ)、ENVELOPE は 6D00 である。
 
 ## 6. フック (`card_profile.hooks`)
 
@@ -138,7 +171,7 @@ const applet_t my_applet = {
 |--------|-------------|---------|
 | `on_atr`, `on_deactivate` | ATR 送出後 / RST Low | なし |
 | `check_access`, `on_select`, `on_file_changed` | ACL 評価 / ファイル選択 / 書き換え後 | PIN 規則 / なし |
-| `classify` | T=0 で表にない INS の case 判定 | case 1 扱い |
+| `classify` | T=0 で表にもアプレットの `classify` にもない INS の case 判定 | case 1 扱い |
 | `unhandled` | 誰も処理しなかったコマンド | 6D00 / 6E00 |
 | `get_data`, `put_data` | 00 CA / 00 DA | 6A81 |
 | `internal_authenticate`, `external_authenticate` | 00 88 / 00 82 (GET CHALLENGE の値は `sec_last_challenge()`) | 6A81 |

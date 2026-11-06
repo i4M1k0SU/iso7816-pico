@@ -21,16 +21,30 @@ void test_dispatch(void) {
     t0_session_begin();
     t0r_begin();
 
+    // The default applet is selected implicitly *with* its select(): demo_select made EF 0101 current, so READ BINARY
+    // without a SELECT works right after the ATR.
+    CHECK_EQ(sw("00 B0 00 00 10"), 0x9000);
+    CHECK_EQ(r.len, 16);
+
     // Command chaining must keep CLA/INS/P1/P2; a different command in the middle is refused.
     CHECK_EQ(sw("10 D6 00 00 02 41 42"), 0x9000);
     CHECK_EQ(sw("00 B0 00 00 05"), 0x6883);
     CHECK_EQ(sw("00 B0 81 00 05"), 0x9000);     // the chain state was discarded (EF 0101 via SFI)
 
-    // Logical channels: closed channel, explicit open, inherit the current EF, close, basic channel cannot close.
+    // Logical channels: closed channel, explicit open, close, basic channel cannot close.  Opened from the basic
+    // channel, a channel starts with the default applet (its select() makes EF 0101 current), not with channel 0's EF.
     CHECK_EQ(sw("02 B0 00 00 05"), 0x6881);
+    CHECK_EQ(sw("00 A4 02 0C 02 01 02"), 0x9000);   // channel 0: record EF 0102
+    CHECK_EQ(sw("00 B0 00 00 05"), 0x6981);
     CHECK_EQ(sw("00 70 00 02 00"), 0x9000);
     CHECK_EQ(r.len, 0);
-    CHECK_EQ(sw("02 B0 00 00 05"), 0x9000);     // inherits the current EF of channel 0
+    CHECK_EQ(sw("02 B0 00 00 05"), 0x9000);         // EF 0101 from demo_select
+    // Opened from another channel, it gets that channel's applet and current file.
+    CHECK_EQ(sw("02 A4 02 0C 02 01 02"), 0x9000);
+    CHECK_EQ(sw("02 70 00 03 00"), 0x9000);
+    CHECK_EQ(sw("03 B0 00 00 05"), 0x6981);         // EF 0102 copied from channel 2
+    CHECK_EQ(sw("03 B2 01 04 05"), 0x9000);
+    CHECK_EQ(sw("00 70 80 03 00"), 0x9000);
     CHECK_EQ(sw("00 70 00 02 00"), 0x6A86);     // already open
     CHECK_EQ(sw("00 70 80 02 00"), 0x9000);
     CHECK_EQ(sw("02 B0 00 00 05"), 0x6881);

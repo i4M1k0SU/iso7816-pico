@@ -7,8 +7,9 @@
 // Forget all session state (selected applets, security status, chaining). Called after every ATR.
 void dispatch_reset(void);
 
-// Classify a command header for T=0 (which needs to know whether P3 is Lc or Le).  APDU_CASE_UNKNOWN when nobody knows
-// the INS; T=0 then treats it as case 1 and the dispatcher answers 6D00 / 6E00.
+// Classify a command header for T=0 (which needs to know whether P3 is Lc or Le): the table and classify() of the
+// applet selected on the addressed channel, the interindustry table, then hooks.classify.  APDU_CASE_UNKNOWN when
+// nobody knows the INS; T=0 then treats it as case 1 (P3 ignored, no data received).
 apdu_case_t dispatch_classify(uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2);
 
 // Name of the command for logging ("?" if unknown).
@@ -18,8 +19,9 @@ const char *dispatch_name(uint8_t cla, uint8_t ins);
 // APDU_UNHANDLED.
 uint16_t dispatch_process(const apdu_t *cmd, apdu_resp_t *resp);
 
-// True when some command with this INS exists (6E00 instead of 6D00).
-bool dispatch_ins_known(uint8_t ins);
+// True when nobody served the command but its INS has a handler under another CLA in the current context (applet
+// selected on the addressed channel, interindustry commands, SELECT / MANAGE CHANNEL): 6E00 instead of 6D00.
+bool dispatch_cla_mismatch(const apdu_t *cmd);
 
 // Buffers owned by the dispatcher: the transports fill cmd_buf with the command data field and hand resp_buf to
 // dispatch_process().

@@ -97,12 +97,13 @@ La > 0 を知らせるものであり (6C00 は La = 256 を意味する)、Nr =
 1. CLA 解読 (チャネル、チェイニング、SM)。閉じたチャネルは 6881。
 2. SM bit があれば `hooks.sm_unwrap`。
 3. チェイニング中なら蓄積して 9000 を返し、最後の片で全体を処理する。
-4. SELECT by DF name → アプレット (前方一致)、なければファイルシステムの DF。
-5. MANAGE CHANNEL。
+4. SELECT by DF name → アプレット (前方一致、`select` が 9000 / 62xx / 63xx を返したときだけ選択成立)、
+   なければファイルシステムの DF。
+5. MANAGE CHANNEL (開いたチャネルでもアプレットの `select` を呼ぶ)。
 6. チャネルのアプレット: コマンド表のハンドラ → `process`。
 7. `iso_commands` が真かつ CLA が interindustry なら標準コマンド表。
 8. `hooks.unhandled`。
-9. 6E00 (INS は他の CLA で既知) または 6D00。
+9. interindustry の GET RESPONSE は 6985。他は 6E00 (現在の文脈で、その INS のハンドラが別の CLA にある) または 6D00。
 10. SM bit があれば `hooks.sm_wrap`。
 
 ## 実装済みの機能
