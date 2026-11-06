@@ -76,7 +76,9 @@ void fs_select_file(uint8_t ch, const fs_file_t *f);
 // Build the FCP (62 ...) / FCI (6F ...) / FMD (64 ...) of a file.
 void fs_put_fcp(apdu_resp_t *resp, const fs_file_t *f, uint8_t template_tag);
 
-// Records: n is 1-based.  Return false when the record does not exist.
+// Records: n is 1-based.  Return false when the record does not exist: in a linear fixed EF every record exists, in a
+// linear variable or cyclic EF only the records in use.  fs_record_write() overwrites an existing record; only
+// fs_record_append() adds one.
 uint16_t fs_record_count(const fs_file_t *ef);
 bool fs_record_read(const fs_file_t *ef, uint16_t n, const uint8_t **out, uint16_t *len);
 bool fs_record_write(const fs_file_t *ef, uint16_t n, const uint8_t *in, uint16_t len);

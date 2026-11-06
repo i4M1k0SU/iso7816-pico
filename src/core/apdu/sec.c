@@ -2,6 +2,7 @@
 
 #include "iso7816_pico/card.h"
 #include "iso7816_pico/fs.h"
+#include "iso7816_pico/log.h"
 #include "hal/nvm.h"
 
 #include "pico/rand.h"
@@ -11,12 +12,31 @@
 static sec_pin_t *s_pins;
 static size_t s_n;
 static uint32_t s_verified[CARD_MAX_CHANNELS];   // bit i = pin i verified
+_Static_assert(SEC_MAX_PINS <= 32, "s_verified has one bit per PIN");
 static uint8_t s_challenge[SEC_CHALLENGE_MAX];
 static size_t s_challenge_len;
 
+// Profile errors are logged once at boot; the commands then refuse what cannot work instead of consuming tries.
 void sec_init(sec_pin_t *pins, size_t n) {
     s_pins = pins;
-    s_n = n > 32 ? 32 : n;
+    s_n = n;
+    if (n > SEC_MAX_PINS) {
+        log_printf("SEC: the profile has %lu PINs, only the first %d are used (SEC_MAX_PINS)", (unsigned long)n,
+                   SEC_MAX_PINS);
+        s_n = SEC_MAX_PINS;
+    }
+    bool transform = card_profile && card_profile->hooks.pin_transform;
+    for (size_t i = 0; i < s_n; i++) {
+        const sec_pin_t *p = &pins[i];
+        if (p->len > SEC_PIN_MAX_LEN || p->puk_len > SEC_PIN_MAX_LEN || p->max_len > SEC_PIN_MAX_LEN) {
+            log_printf("SEC: PIN %02X: a length is above SEC_PIN_MAX_LEN (%d); new values are capped there", p->ref,
+                       SEC_PIN_MAX_LEN);
+        }
+        if (transform && !p->plain_len) {
+            log_printf("SEC: PIN %02X: pin_transform without plain_len: CHANGE REFERENCE DATA P1=00 and RESET RETRY "
+                       "COUNTER P1=00/01 answer 6F00", p->ref);
+        }
+    }
     sec_reset();
 }
 
@@ -94,9 +114,19 @@ static size_t stored_form(const sec_pin_t *p, const uint8_t *in, size_t len, uin
     return len;
 }
 
-// Plaintext length of the stored PIN / PUK, needed to split "old + new" data fields.
+// Plaintext length of the stored PIN / PUK, needed to split "old + new" data fields.  0 with a pin_transform means the
+// profile did not set plain_len (logged by sec_init()): the commands answer 6F00 without consuming a try.
 static size_t plain_len(const sec_pin_t *p, size_t stored_len) {
     return card_profile->hooks.pin_transform ? p->plain_len : stored_len;
+}
+
+// Can a candidate of this length match at all?  Checked before a try is consumed, so a malformed command costs no try:
+// an empty value never matches, and neither does one longer than a stored PIN can be (SEC_PIN_MAX_LEN) or, with a
+// pin_transform and plain_len, one of another length.  None of this depends on the stored value.
+static bool candidate_len_ok(const sec_pin_t *p, size_t len) {
+    if (len == 0) return false;
+    if (card_profile->hooks.pin_transform) return !p->plain_len || len == p->plain_len;
+    return len <= SEC_PIN_MAX_LEN;
 }
 
 // Make a decremented retry counter durable before the candidate is compared.  Otherwise a wrong try followed by a
@@ -134,16 +164,46 @@ static uint16_t try_pin(uint8_t ch, sec_pin_t *p, const uint8_t *cand, size_t le
     return p->retries ? SW_WARN_COUNTER(p->retries) : SW_AUTH_BLOCKED;
 }
 
-static uint16_t set_pin(sec_pin_t *p, const uint8_t *v, size_t len) {
-    if (len < p->min_len || len > p->max_len || len > SEC_PIN_MAX_LEN) return SW_WRONG_LENGTH;
+// Compare a candidate with the PUK, maintaining the PUK retry counter like try_pin().
+static uint16_t try_puk(sec_pin_t *p, const uint8_t *cand, size_t len) {
+    if (p->puk_retries == 0) return SW_AUTH_BLOCKED;
+    p->puk_retries--;
+    persist_counter("(PUK try)");
     uint8_t form[SEC_PIN_MAX_LEN];
-    size_t n = stored_form(p, v, len, form);
-    if (!n) return SW_WRONG_DATA;
-    memcpy(p->value, form, n);
-    p->len = (uint8_t)n;
-    p->retries = p->max_retries;
+    size_t n = stored_form(p, cand, len, form);
+    if (!n || n != p->puk_len || !equal(form, p->puk, n)) {
+        return p->puk_retries ? SW_WARN_COUNTER(p->puk_retries) : SW_AUTH_BLOCKED;
+    }
+    p->puk_retries = p->puk_max_retries;
     nvm_mark_dirty();
     return SW_OK;
+}
+
+// A new PIN value checked and converted to its stored form, before anything is changed.
+typedef struct {
+    uint8_t form[SEC_PIN_MAX_LEN];
+    size_t len;
+} new_pin_t;
+
+static uint16_t prepare_pin(const sec_pin_t *p, const uint8_t *v, size_t len, new_pin_t *out) {
+    if (len < p->min_len || len > p->max_len || len > SEC_PIN_MAX_LEN) return SW_WRONG_LENGTH;
+    if (card_profile->hooks.pin_transform && p->plain_len && len != p->plain_len) return SW_WRONG_LENGTH;
+    out->len = stored_form(p, v, len, out->form);
+    return out->len ? SW_OK : SW_WRONG_DATA;
+}
+
+static void commit_pin(sec_pin_t *p, const new_pin_t *v) {
+    memcpy(p->value, v->form, v->len);
+    p->len = (uint8_t)v->len;
+    p->retries = p->max_retries;
+    nvm_mark_dirty();
+}
+
+static uint16_t set_pin(sec_pin_t *p, const uint8_t *v, size_t len) {
+    new_pin_t np;
+    uint16_t sw = prepare_pin(p, v, len, &np);
+    if (sw == SW_OK) commit_pin(p, &np);
+    return sw;
 }
 
 // ---------------------------------------------------------------------------
@@ -164,20 +224,27 @@ uint16_t sec_cmd_verify(const apdu_t *cmd, apdu_resp_t *resp) {
         if (sec_is_verified(cmd->channel, p->ref)) return SW_OK;
         return p->retries ? SW_WARN_COUNTER(p->retries) : SW_AUTH_BLOCKED;
     }
+    if (!candidate_len_ok(p, cmd->lc)) return SW_WRONG_LENGTH;
     return try_pin(cmd->channel, p, cmd->data, cmd->lc);
 }
 
-// 00 24 P1 P2 Lc data: P1 = 00 -> old PIN + new PIN, P1 = 01 -> new PIN only (requires a verified status).
+// 00 24 P1 P2 Lc data: P1 = 00 -> old PIN + new PIN, P1 = 01 -> new PIN only (requires a verified status).  For
+// P1 = 00 the whole data field (both lengths, the new value's form) is checked before the old PIN costs a try.
 uint16_t sec_cmd_change_reference_data(const apdu_t *cmd, apdu_resp_t *resp) {
     (void)resp;
     sec_pin_t *p = sec_find(cmd->p2);
     if (!p) return SW_REF_DATA_NOT_FOUND;
     if (cmd->p1 == 0x00) {
         size_t old_len = plain_len(p, p->len);
+        if (old_len == 0) return card_profile->hooks.pin_transform ? SW_UNKNOWN : SW_REF_DATA_INVALID;
         if (cmd->lc <= old_len) return SW_WRONG_LENGTH;
-        uint16_t sw = try_pin(cmd->channel, p, cmd->data, old_len);
+        new_pin_t np;
+        uint16_t sw = prepare_pin(p, cmd->data + old_len, cmd->lc - old_len, &np);
         if (sw != SW_OK) return sw;
-        return set_pin(p, cmd->data + old_len, cmd->lc - old_len);
+        sw = try_pin(cmd->channel, p, cmd->data, old_len);
+        if (sw != SW_OK) return sw;
+        commit_pin(p, &np);
+        return SW_OK;
     }
     if (cmd->p1 == 0x01) {
         if (!sec_is_verified(cmd->channel, p->ref)) return SW_SECURITY_STATUS;
@@ -187,7 +254,8 @@ uint16_t sec_cmd_change_reference_data(const apdu_t *cmd, apdu_resp_t *resp) {
 }
 
 // 00 2C P1 P2 [Lc data]: P1 = 00 PUK + new PIN, 01 PUK only (unblock), 02 new PIN (verified status required), 03 no
-// data (verified status required).
+// data (verified status required).  Every length (and for P1 = 00 the new PIN's form) is checked before the PUK costs a
+// try or anything changes.
 uint16_t sec_cmd_reset_retry_counter(const apdu_t *cmd, apdu_resp_t *resp) {
     (void)resp;
     sec_pin_t *p = sec_find(cmd->p2);
@@ -196,33 +264,29 @@ uint16_t sec_cmd_reset_retry_counter(const apdu_t *cmd, apdu_resp_t *resp) {
     case 0x00:
     case 0x01: {
         if (!p->puk_len) return SW_REF_DATA_NOT_FOUND;
-        if (p->puk_retries == 0) return SW_AUTH_BLOCKED;
         size_t puk_plain = plain_len(p, p->puk_len);
-        if (cmd->lc < puk_plain) return SW_WRONG_LENGTH;
-        p->puk_retries--;
-        persist_counter("(PUK try)");
-        uint8_t form[SEC_PIN_MAX_LEN];
-        size_t n = stored_form(p, cmd->data, puk_plain, form);
-        if (!n || n != p->puk_len || !equal(form, p->puk, n)) {
-            return p->puk_retries ? SW_WARN_COUNTER(p->puk_retries) : SW_AUTH_BLOCKED;
-        }
-        p->puk_retries = p->puk_max_retries;
-        nvm_mark_dirty();
+        if (puk_plain == 0) return SW_UNKNOWN;   // pin_transform without plain_len (logged at boot)
+        new_pin_t np = { .len = 0 };
         if (cmd->p1 == 0x00) {
-            uint16_t sw = set_pin(p, cmd->data + puk_plain, cmd->lc - puk_plain);
+            if (cmd->lc <= puk_plain) return SW_WRONG_LENGTH;
+            uint16_t sw = prepare_pin(p, cmd->data + puk_plain, cmd->lc - puk_plain, &np);
             if (sw != SW_OK) return sw;
         } else if (cmd->lc != puk_plain) {
             return SW_WRONG_LENGTH;
         }
+        uint16_t sw = try_puk(p, cmd->data, puk_plain);
+        if (sw != SW_OK) return sw;
+        if (cmd->p1 == 0x00) commit_pin(p, &np);   // also restores the PIN retry counter
         p->retries = p->max_retries;
+        nvm_mark_dirty();
         return SW_OK;
     }
     case 0x02:
         if (!sec_is_verified(cmd->channel, p->ref)) return SW_SECURITY_STATUS;
         return set_pin(p, cmd->data, cmd->lc);
     case 0x03:
-        if (!sec_is_verified(cmd->channel, p->ref)) return SW_SECURITY_STATUS;
         if (cmd->lc) return SW_WRONG_LENGTH;
+        if (!sec_is_verified(cmd->channel, p->ref)) return SW_SECURITY_STATUS;
         p->retries = p->max_retries;
         nvm_mark_dirty();
         return SW_OK;
@@ -231,13 +295,17 @@ uint16_t sec_cmd_reset_retry_counter(const apdu_t *cmd, apdu_resp_t *resp) {
     }
 }
 
+// 00 26 / 00 28 P1 P2 [Lc PIN]: P1 = 00 with the PIN (checked like VERIFY; an empty field costs no try), P1 = 01
+// without data (verified status required).
 static uint16_t set_disabled(const apdu_t *cmd, bool disabled) {
     sec_pin_t *p = sec_find(cmd->p2);
     if (!p) return SW_REF_DATA_NOT_FOUND;
     if (cmd->p1 == 0x00) {
+        if (!candidate_len_ok(p, cmd->lc)) return SW_WRONG_LENGTH;
         uint16_t sw = try_pin(cmd->channel, p, cmd->data, cmd->lc);
         if (sw != SW_OK) return sw;
     } else if (cmd->p1 == 0x01) {
+        if (cmd->lc) return SW_WRONG_LENGTH;
         if (!sec_is_verified(cmd->channel, p->ref)) return SW_SECURITY_STATUS;
     } else {
         return SW_WRONG_P1P2;

@@ -21,6 +21,10 @@ typedef struct {
 
 #define SEC_CHALLENGE_MAX 32
 
+// Most PINs a profile can have: the security status keeps one bit per PIN and channel in a uint32_t.  sec_init() logs a
+// profile with more and uses only the first SEC_MAX_PINS.
+#define SEC_MAX_PINS 32
+
 void sec_init(sec_pin_t *pins, size_t n);
 void sec_reset(void);                  // forget all verifications (ATR)
 void sec_clear_channel(uint8_t ch);    // channel closed / application changed

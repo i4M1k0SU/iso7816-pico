@@ -107,7 +107,8 @@ void test_fs(void) {
     // Linear variable EF 0104 (PIN 81): the erased record is empty and its slot is cleared.
     CHECK_EQ(sw("00 A4 02 0C 02 01 04"), 0x9000);
     CHECK_EQ(sw("00 20 00 81 04 30 30 30 30"), 0x9000);
-    CHECK_EQ(sw("00 DC 01 04 03 61 62 63"), 0x9000);
+    CHECK_EQ(sw("00 DC 01 04 03 61 62 63"), 0x6A83);   // no record yet: only APPEND RECORD adds one
+    CHECK_EQ(sw("00 E2 00 00 03 61 62 63"), 0x9000);
     CHECK_EQ(sw("00 0C 01 04 00"), 0x9000);
     CHECK_EQ(sw("00 B2 01 04 00"), 0x9000);
     CHECK_EQ(r.len, 0);
