@@ -1,4 +1,4 @@
-// Non-blocking logging to the USB serial console (ring buffer, drained in idle time).  Implemented in sys/console.c.
+// Non-blocking logging to the USB serial console (ring buffer, drained in idle time).  Implemented in src/pico/sys/console.c.
 #pragma once
 
 #include <stddef.h>
