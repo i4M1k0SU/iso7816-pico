@@ -19,8 +19,8 @@ static size_t s_challenge_len;
 // Profile errors are logged once at boot; the commands then refuse what cannot work instead of consuming tries.
 void sec_init(sec_pin_t *pins, size_t n) {
     s_pins = pins;
-    s_n = n;
-    if (n > SEC_MAX_PINS) {
+    s_n = pins ? n : 0; // n without pins: none (reported by profile_check())
+    if (s_n > SEC_MAX_PINS) {
         log_printf("SEC: the profile has %lu PINs, only the first %d are used (SEC_MAX_PINS)", (unsigned long)n,
                    SEC_MAX_PINS);
         s_n = SEC_MAX_PINS;

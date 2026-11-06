@@ -12,5 +12,6 @@ set(ISO7816_PICO_CORE_SOURCES
         ${ISO7816_PICO_ROOT}/src/core/apdu/fs.c
         ${ISO7816_PICO_ROOT}/src/core/apdu/sec.c
         ${ISO7816_PICO_ROOT}/src/core/apdu/iso_cmds.c
+        ${ISO7816_PICO_ROOT}/src/core/apdu/profile_check.c
         ${ISO7816_PICO_ROOT}/src/core/hal/nvm.c
 )

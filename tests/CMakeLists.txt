@@ -38,6 +38,7 @@ add_executable(iso7816_tests
         test_fs_sec.c
         test_nvm.c
         test_card_suite.c
+        test_profile_check.c
         # code under test
         ${ISO7816_PICO_CORE_SOURCES}
         # the demo card is the test subject

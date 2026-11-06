@@ -323,6 +323,89 @@ static const console_cmd_t s_console_cmds[] = {
 
 デモカードは `dump` (NVM の内容) と `unblock` (PIN のリトライ回数を戻す) を定義している。
 
+## 9. プロファイルの検証
+
+起動時、`card_runtime_init()` は NVM の読み込みの後、`fs_init()` / `sec_init()` の前に `profile_check()`
+(`src/core/apdu/profile_check.c`) でプロファイルを読むだけの検査にかけ、見つけた不整合を 1 件 1 行でコンソールに出す。
+
+```
+profile: error: file 0101: SFI 1 already used by EF 0101 in the same DF (fs_by_sfi finds that one)
+profile: warning: applet long: AID starts with short's: a partial SELECT by name is ambiguous
+profile: 2 finding(s), 1 error(s); see docs/card-profile.md
+```
+
+`grep "profile:"` で拾える。重大度は 3 段階で、`error` は設定どおりに動かないもの、`warning` は動くが意図と違う
+可能性が高いもの、`note` は正当だが知っておくべきもの (RAM だけのファイルなど) である。括弧内はその規則に依存して
+いるコードである。検査は起動を止めない。不整合が無ければ何も出力しない (デモは 0 件)。表示は先頭 24 件
+(`PROFILE_CHECK_MAX_LINES`) までで、残りは件数だけを出す。ホストのテストからも `profile_check(&profile)` で呼べ、
+戻り値は件数である (`tests/test_profile_check.c`)。
+
+ほかの場所が既にログに出すものは繰り返さない。PIN の数が `SEC_MAX_PINS` を超える、長さが `SEC_PIN_MAX_LEN` を超える、
+`pin_transform` があるのに `plain_len` が無い (`SEC: ...`、`sec_init()`)、ATR を組み立てられない・解釈できない
+(`session: invalid ATR in card profile`、`session_init()`) である。
+
+### 使用不能にするもの
+
+フレームワークにプロファイルの外のメモリを読み書きさせる欠陥だけは、報告に加えて該当するオブジェクトを使わない。
+判定は `profile_file_defect()` / `profile_applet_defect()` で、検査と実際の扱いが同じ規則になる。
+
+| 欠陥 | 扱い |
+|------|------|
+| EF の `size` があるのに `data` が NULL / 記録 EF の `data` が NULL / 記録 EF の `size` が記録ヘッダ (4 バイト) 未満 / 可変長記録 EF の `rec_size` + 2 が 16 ビットを超える | `fs.c` の検索 (`fs_child`、`fs_by_name`、`fs_by_sfi`、パス) がそのファイルを飛ばすので、選択できない |
+| `parent` が `files[]` の外を指す (祖先のどれかでも)、祖先が上の欠陥を持つ | 同上 (その DF の下のファイルもすべて) |
+| `files[0]` 自身が使用不能 | ファイルシステム無し (`fs_present()` が偽) |
+| `applets[i]` が NULL / `aid_len` があるのに `aid` が NULL / `n_cmds` があるのに `cmds` が NULL / `applets` が NULL | `dispatch.c` がそのアプレットを選択も `reset()` もしない (既定アプレットでも) |
+| `pins` が NULL なのに `n_pins` が 1 以上 | `sec_init()` は PIN 無しとして扱う |
+
+ほかの不整合は報告だけで、動作は従来どおりである (たとえば FID の重複では先に並んだファイルが選ばれる)。
+
+### 検査項目
+
+* ファイルツリー (`fs.h`、`fs.c`)
+  * `files[0]` が MF (FID 3F00、DF、`parent` 無し) である。ほかに `parent` の無いファイルが無い。
+  * `parent` が DF を指し、親をたどると循環せず MF に着く。
+  * 同じ DF の下で FID が重複しない。3F00 を MF 以外が使わない。3FFF / FFFF (予約) を使わない。親 DF と同じ FID でない
+    (SELECT P1=00 は DF 自身を先に見つける)。
+  * SFI が 0 (無し) か 1..30 で、同じ DF の下で重複しない。
+  * 種別が `fs_type_t` のどれかである。DF は `data` / `size` / `rec_size` / SFI を持たない (無視される)。EF は
+    名前を持たない。
+  * DF 名が 16 バイト以下で、ほかの DF 名と一致しない。先に並んだ DF 名の先頭部分になっていない (部分一致の SELECT で
+    先の DF が選ばれる)。後ろの DF 名が先の DF 名で始まる場合は warning。
+  * 記録 EF: `rec_size` が 0 でない。`size` が `FS_LINEAR_FIXED_BYTES` / `FS_CYCLIC_BYTES` / `FS_LINEAR_VARIABLE_BYTES`
+    (`rec_size`, 件数) に一致する (余りは warning、1 件も入らなければ error)。件数が 254 以下 (P1 で番号指定でき、
+    SEARCH RECORD は番号を 1 バイトで返す)。`rec_size` が 255 以下 (短い APDU の Lc)。記録ヘッダの使用件数と巡回 EF の
+    先頭位置が容量に収まる。
+  * transparent EF: `rec_size` を持たない。`size` が 65535 以下 (FCP のタグ 80 は 2 バイト)。
+  * EF の `ac_read` / `ac_update` が `FS_AC_ALWAYS` / `FS_AC_NEVER` 以外なら、その参照の PIN が `pins[]` にある
+    (`hooks.check_access` があれば検査しない)。
+  * プロファイルに `nvm_blob` があるとき、EF の `data` が blob の中にある。完全に外なら note (保存されない RAM の
+    ファイル)、blob の境界をまたげば error。
+* PIN (`sec.h`、`sec.c`)
+  * `ref` が重複しない。`ref` が 00 / FF (`FS_AC_ALWAYS` / `FS_AC_NEVER`) でない (アクセス条件にできない)。
+  * `max_retries` が 0 でない。PUK があれば `puk_max_retries` が 0 でない。`retries` / `puk_retries` が最大値以下。
+  * `min_len <= max_len`。保存値 (`len`) が空でない (検証を無効にした PIN を除く)。
+* アプレット (`card.h`、`dispatch.c`)
+  * AID が 1..16 バイト (5 バイト未満は ISO 7816-5 の RID より短いので warning、16 を超えると既定 FCI が 6F00)。
+  * AID が先に並んだアプレットの AID と一致しない、その先頭部分でない (SELECT は部分一致なので先のアプレットが選ばれ、
+    後のものは SELECT next でしか届かない)。後の AID が先の AID で始まる場合は warning。
+  * コマンド表: `cla` が `cla_mask` の外にビットを持たない (一致し得ない)。前の項目と同じ (`cla`、`cla_mask`、`ins`)
+    なら error、前の項目に包含される (必ず前が一致する) なら warning。`handler` が無く、アプレットに `process` も
+    無い項目は warning (分類にしか使われない)。
+  * `default_applet` が `applets[]` にある (無いと `reset()` が呼ばれず SELECT でも見つからない)。
+  * `max_channels` が 1..`CARD_MAX_CHANNELS` (0 は note、超過は warning)。
+* ATR と伝送パラメータ (`session.c`、`pps.c`、`phy.h`)
+  * `atr` と `atr_desc` の両方を設定していない (`atr` が使われる)。`atr` と `atr_len` は両方設定する。
+  * 提示するプロトコルが T=0 / T=1 だけである。
+  * 特定モード (TA2): プロトコルが T=0 / T=1 で、F/D を PIO が扱える (`phy_params_supported`)。扱えなければ ATR の後に
+    止まるので error。
+  * 交渉モードで TA1 が既定以外の F/D を示すとき、`allow_pps` が偽なら note (リーダーは 372 / 1 のまま)、PIO が扱えない
+    F/D なら warning (その PPS は拒否される)。
+  * `tx_extra_guard` が 20 以下 (超えると PHY がセッションを始めず ATR が出ない)。
+* コンソールコマンド (`card.h`、`src/pico/sys/console.c`)
+  * 名前とハンドラがある。名前に空白を含まない (入力できない)。組み込みコマンドと同名でない (組み込みが先に一致する)。
+    重複しない (先のものが実行される)。8 文字を超える名前は note (`help` の桁がずれる)。組み込みの名前の一覧は
+    `profile_check.c` にも持っているので、`console.c` にコマンドを足したら両方を直す。
+
 ## ハンドラから使用できる API
 
 | 関数 | 用途 |
