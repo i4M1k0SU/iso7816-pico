@@ -2,9 +2,9 @@
 
 #include "iso7816_pico/card.h"
 #include "iso7816_pico/fs.h"
-#include "iso_cmds.h"
-#include "iso7816_pico/sec.h"
 #include "iso7816_pico/log.h"
+#include "iso7816_pico/sec.h"
+#include "iso_cmds.h"
 
 #include <string.h>
 
@@ -73,11 +73,11 @@ static void decode_cla(uint8_t cla, apdu_t *c) {
         c->sm = 0;
         return;
     }
-    if (!(cla & 0x40)) {                      // first interindustry values / proprietary
+    if (!(cla & 0x40)) { // first interindustry values / proprietary
         c->channel = cla & 0x03;
         c->chaining = cla & 0x10;
         c->sm = (cla >> 2) & 0x03;
-    } else {                                  // further interindustry values (channels 4..19)
+    } else { // further interindustry values (channels 4..19)
         c->channel = (uint8_t)(4 + (cla & 0x0F));
         c->chaining = cla & 0x10;
         c->sm = (cla & 0x20) ? 2 : 0;
@@ -127,7 +127,7 @@ apdu_case_t dispatch_classify(uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2) 
         d = iso_cmds_find(cla, ins);
         if (d) return d->kind;
     }
-    if (ins == 0xA4 && (p1 & 0x04)) return APDU_CASE4;     // SELECT by name: applets
+    if (ins == 0xA4 && (p1 & 0x04)) return APDU_CASE4; // SELECT by name: applets
     if (card_profile->hooks.classify) return card_profile->hooks.classify(cla, ins, p1, p2);
     return APDU_CASE_UNKNOWN;
 }
@@ -189,8 +189,7 @@ static void deselect_applet(uint8_t ch) {
 }
 
 // Find the n-th applet whose AID starts with (or equals) the given name.
-static const applet_t *find_applet(const uint8_t *name, size_t len, bool partial,
-                                   const applet_t *after) {
+static const applet_t *find_applet(const uint8_t *name, size_t len, bool partial, const applet_t *after) {
     bool passed = after == NULL;
     for (size_t i = 0; i < card_profile->n_applets; i++) {
         const applet_t *a = card_profile->applets[i];
@@ -199,8 +198,7 @@ static const applet_t *find_applet(const uint8_t *name, size_t len, bool partial
             continue;
         }
         if (len == 0 || len > a->aid_len) continue;
-        if (partial ? memcmp(a->aid, name, len) == 0
-                    : (len == a->aid_len && memcmp(a->aid, name, len) == 0)) {
+        if (partial ? memcmp(a->aid, name, len) == 0 : (len == a->aid_len && memcmp(a->aid, name, len) == 0)) {
             return a;
         }
     }
@@ -209,9 +207,7 @@ static const applet_t *find_applet(const uint8_t *name, size_t len, bool partial
 
 // SW of select() that leaves the applet selected: 9000 and the warnings 62xx / 63xx (ISO 7816-4 5.6: the command was
 // executed).  Anything else is a failed selection.
-static bool select_succeeded(uint16_t sw) {
-    return sw == SW_OK || (sw >> 8) == 0x62 || (sw >> 8) == 0x63;
-}
+static bool select_succeeded(uint16_t sw) { return sw == SW_OK || (sw >> 8) == 0x62 || (sw >> 8) == 0x63; }
 
 // Make applet `a` the selected one on channel ch: the cursor starts at `start` (NULL: the DF of the same name if there
 // is one, else the MF), then a->select() runs.  The channel state (applet, cursor) is committed only when select()
@@ -226,18 +222,20 @@ static uint16_t activate_applet(uint8_t ch, const applet_t *a, const apdu_t *cmd
     } else {
         // A DF of the same name becomes the current DF, so the applet can use the file system below it.
         const fs_file_t *df = fs_by_name(a->aid, a->aid_len, false, NULL);
-        if (df) fs_select_file(ch, df);
-        else fs_cursor_reset(ch);
+        if (df)
+            fs_select_file(ch, df);
+        else
+            fs_cursor_reset(ch);
     }
-    s_ch[ch].applet = a;    // already visible to select(), e.g. for a nested dispatch_classify()
+    s_ch[ch].applet = a; // already visible to select(), e.g. for a nested dispatch_classify()
 
     uint16_t sw = SW_OK;
     if (a->select) {
         apdu_t c = *cmd;
         c.applet = a;
         sw = a->select(&c, resp);
-    }
-    else if ((cmd->p2 & 0x0C) != 0x0C) card_put_default_fci(resp, a->aid, a->aid_len);
+    } else if ((cmd->p2 & 0x0C) != 0x0C)
+        card_put_default_fci(resp, a->aid, a->aid_len);
     if (select_succeeded(sw) && resp->overflow) {
         // An incomplete FCI is not a successful selection.
         log_printf("%s: response overflow (cap %u)", a->name ? a->name : "applet", (unsigned)resp->cap);
@@ -256,8 +254,15 @@ static uint16_t activate_applet(uint8_t ch, const applet_t *a, const apdu_t *cmd
 // a synthetic SELECT by DF name with P2 = 0C (no response data); its response is discarded.
 static uint16_t implicit_select(uint8_t ch, const applet_t *a, const fs_cursor_t *start, apdu_resp_t *resp) {
     apdu_t cmd = {
-        .cla = ch < 4 ? ch : (uint8_t)(0x40 | (ch - 4)), .ins = 0xA4, .p1 = 0x04, .p2 = 0x0C,
-        .data = a->aid, .lc = a->aid_len, .channel = ch, .interindustry = true, .applet = a,
+        .cla = ch < 4 ? ch : (uint8_t)(0x40 | (ch - 4)),
+        .ins = 0xA4,
+        .p1 = 0x04,
+        .p2 = 0x0C,
+        .data = a->aid,
+        .lc = a->aid_len,
+        .channel = ch,
+        .interindustry = true,
+        .applet = a,
     };
     uint16_t sw = activate_applet(ch, a, &cmd, resp, start);
     resp_reset(resp);
@@ -294,7 +299,7 @@ static uint16_t select_by_name(const apdu_t *cmd, apdu_resp_t *resp) {
 
 static uint16_t manage_channel(const apdu_t *cmd, apdu_resp_t *resp) {
     uint8_t n = max_channels();
-    if (cmd->p1 == 0x00) {                               // open
+    if (cmd->p1 == 0x00) { // open
         uint8_t ch = cmd->p2;
         if (ch == 0) {
             for (ch = 1; ch < n && s_ch[ch].open; ch++) {}
@@ -333,7 +338,7 @@ static uint16_t manage_channel(const apdu_t *cmd, apdu_resp_t *resp) {
         if (cmd->p2 == 0) resp_put_u8(resp, ch);
         return SW_OK;
     }
-    if (cmd->p1 == 0x80) {                               // close
+    if (cmd->p1 == 0x80) { // close
         uint8_t ch = cmd->p2 ? cmd->p2 : cmd->channel;
         if (ch == 0 || ch >= n || !s_ch[ch].open) return SW_WRONG_P1P2;
         deselect_applet(ch);

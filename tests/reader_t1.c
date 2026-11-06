@@ -7,13 +7,13 @@
 
 #define MAX_BLOCK 260
 
-static uint8_t s_cur[MAX_BLOCK];       // block being received from the card
+static uint8_t s_cur[MAX_BLOCK]; // block being received from the card
 static size_t s_cur_len;
-static uint8_t s_last[MAX_BLOCK];      // last complete block from the card
+static uint8_t s_last[MAX_BLOCK]; // last complete block from the card
 static size_t s_last_len;
 static uint32_t s_blocks, s_wtx;
-static uint8_t s_ifsc = 32;            // card's limit (reader -> card chunks)
-static uint8_t s_ns;                   // our send sequence number
+static uint8_t s_ifsc = 32; // card's limit (reader -> card chunks)
+static uint8_t s_ns;        // our send sequence number
 
 static uint8_t lrc(const uint8_t *p, size_t n) {
     uint8_t x = 0;

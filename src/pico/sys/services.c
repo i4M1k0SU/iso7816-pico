@@ -1,4 +1,4 @@
-// Services offered to card code (declared in card/card.h).
+// Services offered to card code (declared in iso7816_pico/card.h).
 #include "iso7816_pico/card.h"
 
 #include "hal/nvm.h"

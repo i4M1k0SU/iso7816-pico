@@ -11,36 +11,36 @@ static bool decode(const char *hex, apdu_t *a) {
 void test_apdu(void) {
     apdu_t a;
 
-    CHECK(decode("00 A4 04 00", &a));                           // case 1
+    CHECK(decode("00 A4 04 00", &a)); // case 1
     CHECK_EQ(a.lc, 0);
     CHECK(!a.le_present);
 
-    CHECK(decode("00 B0 00 00 10", &a));                        // case 2S
+    CHECK(decode("00 B0 00 00 10", &a)); // case 2S
     CHECK_EQ(a.le, 0x10);
     CHECK(a.le_present && !a.extended);
     CHECK(decode("00 B0 00 00 00", &a));
     CHECK_EQ(a.le, 256);
 
-    CHECK(decode("00 20 00 01 04 31 32 33 34", &a));            // case 3S
+    CHECK(decode("00 20 00 01 04 31 32 33 34", &a)); // case 3S
     CHECK_EQ(a.lc, 4);
     CHECK_EQ(a.data[3], 0x34);
     CHECK(!a.le_present);
 
-    CHECK(decode("00 A4 04 00 02 11 22 00", &a));               // case 4S, Le = 00 -> 256
+    CHECK(decode("00 A4 04 00 02 11 22 00", &a)); // case 4S, Le = 00 -> 256
     CHECK_EQ(a.lc, 2);
     CHECK_EQ(a.le, 256);
 
-    CHECK(decode("00 B0 00 00 00 01 00", &a));                  // case 2E
+    CHECK(decode("00 B0 00 00 00 01 00", &a)); // case 2E
     CHECK(a.extended && a.le_present);
     CHECK_EQ(a.le, 256);
     CHECK(decode("00 B0 00 00 00 00 00", &a));
     CHECK_EQ(a.le, 65536);
 
-    CHECK(decode("80 20 00 00 00 00 03 01 02 03", &a));         // case 3E
+    CHECK(decode("80 20 00 00 00 00 03 01 02 03", &a)); // case 3E
     CHECK_EQ(a.lc, 3);
     CHECK(!a.le_present);
 
-    CHECK(decode("80 20 00 00 00 00 03 01 02 03 01 00", &a));   // case 4E
+    CHECK(decode("80 20 00 00 00 00 03 01 02 03 01 00", &a)); // case 4E
     CHECK_EQ(a.lc, 3);
     CHECK_EQ(a.le, 256);
 
@@ -48,7 +48,7 @@ void test_apdu(void) {
     CHECK(!decode("00 A4 04", &a));
     CHECK(!decode("00 A4 04 00 05 01 02", &a));
     CHECK(!decode("00 A4 04 00 02 01 02 03 04", &a));
-    CHECK(!decode("00 A4 04 00 00 00 00 01", &a));             // extended Lc = 0
+    CHECK(!decode("00 A4 04 00 00 00 00 01", &a)); // extended Lc = 0
     CHECK(!decode("00 A4 04 00 00 00 02 01 02 03", &a));
 
     // TLV writer length encodings.
@@ -78,7 +78,7 @@ void test_apdu(void) {
     CHECK(!small.overflow);
     resp_put_u8(&small, 1);
     CHECK_EQ(small.len, 10);
-    CHECK(!small.overflow);                                     // exactly full is fine
+    CHECK(!small.overflow); // exactly full is fine
     resp_put(&small, v, 0);
     CHECK(!small.overflow);
     resp_put_u8(&small, 2);
@@ -90,10 +90,10 @@ void test_apdu(void) {
     resp_put(&small, v, 300);
     CHECK_EQ(small.len, 10);
     CHECK(small.overflow);
-    resp_put_u8(&small, 3);                                     // sticky
+    resp_put_u8(&small, 3); // sticky
     CHECK(small.overflow);
     resp_reset(&small);
-    resp_put_tlv(&small, 0x84, v, 9);                           // 2 + 9 bytes
+    resp_put_tlv(&small, 0x84, v, 9); // 2 + 9 bytes
     CHECK(small.overflow);
     CHECK_EQ(small.len, 10);
 

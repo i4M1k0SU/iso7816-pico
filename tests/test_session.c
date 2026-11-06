@@ -1,6 +1,6 @@
-#include "iso7816_pico/card.h"
 #include "fake_phy.h"
 #include "fakes.h"
+#include "iso7816_pico/card.h"
 #include "proto/session.h"
 #include "test.h"
 
@@ -55,7 +55,7 @@ void test_session(void) {
     tx = fake_phy_tx_log(&n);
     CHECK_HEX(tx, n, "3B 08 50 69 63 6F 37 38 31 36  90 00");
     CHECK(card_bootsel_requested());
-    CHECK_EQ(fake_phy_pending(), 5);     // the second command was never read
+    CHECK_EQ(fake_phy_pending(), 5); // the second command was never read
     fake_clear_bootsel();
     fake_phy_clear();
 
@@ -81,7 +81,7 @@ void test_session(void) {
     session_run();
     tx = fake_phy_tx_log(&n);
     CHECK_HEX(tx, n, "3B 90 13 10 00  6E 00");
-    CHECK_EQ(fake_phy_apply_count(), applied + 1);   // only the specific-mode switch
+    CHECK_EQ(fake_phy_apply_count(), applied + 1); // only the specific-mode switch
     CHECK_EQ(phy_params()->d, 4);
 
     // TA2 = 01 names T=1 although TD1 offers T=0 first: the session runs T=1.

@@ -64,7 +64,7 @@ static const atr_desc_t s_atr_negotiable __attribute__((unused)) = {
 
 // All three were verified with an SCR3310 under Windows (T=0, T=1, and the negotiable one ends up at T=1 with F/D =
 // 372/4 after a PPS).
-#define ATR_IN_USE s_atr_t0          // <- pick s_atr_t0 / s_atr_t1 / s_atr_negotiable
+#define ATR_IN_USE s_atr_t0 // <- pick s_atr_t0 / s_atr_t1 / s_atr_negotiable
 
 // ----------------------------------------------------------------------------
 // 2. Persistent data
@@ -78,14 +78,14 @@ static const atr_desc_t s_atr_negotiable __attribute__((unused)) = {
 // keeps the size is not: that is what the version is for.
 // ----------------------------------------------------------------------------
 
-#define NVM_VERSION 0
+#define NVM_VERSION   0
 
 #define EF_HELLO_SIZE 256
 
 typedef struct {
-    uint8_t ef_hello[EF_HELLO_SIZE];                 // transparent EF 0101
-    uint8_t ef_records[FS_LINEAR_FIXED_BYTES(16, 4)];// linear fixed EF 0102, 4 x 16 bytes
-    uint8_t ef_log[FS_CYCLIC_BYTES(8, 5)];           // cyclic EF 0103, 5 x 8 bytes
+    uint8_t ef_hello[EF_HELLO_SIZE];                   // transparent EF 0101
+    uint8_t ef_records[FS_LINEAR_FIXED_BYTES(16, 4)];  // linear fixed EF 0102, 4 x 16 bytes
+    uint8_t ef_log[FS_CYCLIC_BYTES(8, 5)];             // cyclic EF 0103, 5 x 8 bytes
     uint8_t ef_notes[FS_LINEAR_VARIABLE_BYTES(32, 3)]; // linear variable EF 0104
     sec_pin_t pins[2];
 } nvm_data_t;
@@ -124,6 +124,7 @@ static nvm_data_t s_nvm = {
 
 static const uint8_t s_df_name[] = { 0xF0, 'P', 'I', 'C', 'O' };
 
+// clang-format off
 static const fs_file_t s_files[] = {
     [0] = { .fid = 0x3F00, .type = FS_DF, .parent = NULL },
     [1] = { .fid = 0x7F10, .type = FS_DF, .parent = &s_files[0],
@@ -141,6 +142,7 @@ static const fs_file_t s_files[] = {
             .data = s_nvm.ef_notes, .size = sizeof s_nvm.ef_notes, .rec_size = 32,
             .ac_read = 0x81, .ac_update = 0x81 },
 };
+// clang-format on
 
 // ----------------------------------------------------------------------------
 // 5. Applets
@@ -183,12 +185,12 @@ static uint16_t hook_external_authenticate(const apdu_t *cmd, apdu_resp_t *resp)
     (void)resp;
     size_t n;
     const uint8_t *ch = sec_last_challenge(&n);
-    if (!n) return SW_CONDITIONS_NOT_SAT;            // GET CHALLENGE first
+    if (!n) return SW_CONDITIONS_NOT_SAT; // GET CHALLENGE first
     if (cmd->lc != n) return SW_WRONG_LENGTH;
     for (size_t i = 0; i < n; i++) {
         if ((ch[i] ^ 0x5A) != cmd->data[i]) return SW_SECURITY_STATUS;
     }
-    sec_set_verified(cmd->channel, 0x81, true);      // counts as the app PIN
+    sec_set_verified(cmd->channel, 0x81, true); // counts as the app PIN
     return SW_OK;
 }
 
@@ -204,8 +206,8 @@ static void cmd_dump(const char *args) {
     log_printf("EF 0101[0..15]: %s", hex);
     log_printf("EF 0103 (cyclic): %u record(s) in use", s_nvm.ef_log[0] | (s_nvm.ef_log[1] << 8));
     for (size_t i = 0; i < 2; i++) {
-        log_printf("PIN %02X: %u/%u tries left%s", s_nvm.pins[i].ref, s_nvm.pins[i].retries,
-                   s_nvm.pins[i].max_retries, s_nvm.pins[i].disabled ? " (verification disabled)" : "");
+        log_printf("PIN %02X: %u/%u tries left%s", s_nvm.pins[i].ref, s_nvm.pins[i].retries, s_nvm.pins[i].max_retries,
+                   s_nvm.pins[i].disabled ? " (verification disabled)" : "");
     }
 }
 
@@ -218,8 +220,8 @@ static void cmd_unblock(const char *args) {
 }
 
 static const console_cmd_t s_console_cmds[] = {
-    { "dump",    "show the demo card's NVM (EF 0101, cyclic EF, PIN counters)", cmd_dump },
-    { "unblock", "reset the PIN retry counters",                              cmd_unblock },
+    { "dump", "show the demo card's NVM (EF 0101, cyclic EF, PIN counters)", cmd_dump },
+    { "unblock", "reset the PIN retry counters", cmd_unblock },
 };
 
 // ----------------------------------------------------------------------------

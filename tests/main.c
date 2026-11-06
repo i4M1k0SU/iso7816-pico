@@ -1,9 +1,9 @@
 #include "test.h"
 
+#include "fakes.h"
+#include "iso7816_pico/card.h"
 #include "iso7816_pico/fs.h"
 #include "iso7816_pico/sec.h"
-#include "iso7816_pico/card.h"
-#include "fakes.h"
 
 #include <stdlib.h>
 
@@ -21,10 +21,14 @@ size_t hex_parse(const char *hex, uint8_t *out, size_t cap) {
     int hi = -1;
     for (const char *p = hex; *p; p++) {
         int v;
-        if (*p >= '0' && *p <= '9') v = *p - '0';
-        else if (*p >= 'a' && *p <= 'f') v = *p - 'a' + 10;
-        else if (*p >= 'A' && *p <= 'F') v = *p - 'A' + 10;
-        else continue;
+        if (*p >= '0' && *p <= '9')
+            v = *p - '0';
+        else if (*p >= 'a' && *p <= 'f')
+            v = *p - 'a' + 10;
+        else if (*p >= 'A' && *p <= 'F')
+            v = *p - 'A' + 10;
+        else
+            continue;
         if (hi < 0) {
             hi = v;
         } else {

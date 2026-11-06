@@ -2,12 +2,12 @@
 // rule that a malformed PIN / PUK command is refused before it costs a try.  The handlers are called directly on
 // channel 0 against the demo card profile; the whole NVM image is put back at the end.
 #include "apdu/dispatch.h"
-#include "iso7816_pico/card.h"
-#include "iso7816_pico/fs.h"
-#include "iso7816_pico/sec.h"
 #include "fake_nvm.h"
 #include "fakes.h"
 #include "hal/nvm.h"
+#include "iso7816_pico/card.h"
+#include "iso7816_pico/fs.h"
+#include "iso7816_pico/sec.h"
 #include "test.h"
 
 typedef uint16_t (*handler_fn)(const apdu_t *, apdu_resp_t *);
@@ -45,16 +45,16 @@ static void sfi_checks(void) {
     CHECK_EQ(run(fs_cmd_update_binary, "00 D6 80 00 01 41"), 0x6A86);
     CHECK_EQ(run(fs_cmd_update_binary, "00 D6 9F 00 01 41"), 0x6A86);
     CHECK_EQ(run(fs_cmd_erase_binary, "00 0E 80 00 00"), 0x6A86);
-    CHECK(fs_cursor(0)->ef == NULL);                              // nothing was selected on the way
-    CHECK_EQ(run(fs_cmd_read_binary, "00 B0 81 00 04"), 0x9000);  // SFI 1 still works
-    CHECK_EQ(run(fs_cmd_read_binary, "00 B0 9E 00 00"), 0x6A82);  // SFI 30: valid, no such file
+    CHECK(fs_cursor(0)->ef == NULL);                             // nothing was selected on the way
+    CHECK_EQ(run(fs_cmd_read_binary, "00 B0 81 00 04"), 0x9000); // SFI 1 still works
+    CHECK_EQ(run(fs_cmd_read_binary, "00 B0 9E 00 00"), 0x6A82); // SFI 30: valid, no such file
 
     // RECORD: P2 b8..b4 = 31 is reserved; 0 is the current EF.
     CHECK_EQ(run(fs_cmd_read_record, "00 B2 01 FC 00"), 0x6A86);
     CHECK_EQ(run(fs_cmd_update_record, "00 DC 01 FC 01 41"), 0x6A86);
-    CHECK_EQ(run(fs_cmd_read_record, "00 B2 01 04 00"), 0x6981);   // SFI 0: the current EF, 0101 (selected by SFI 1)
+    CHECK_EQ(run(fs_cmd_read_record, "00 B2 01 04 00"), 0x6981); // SFI 0: the current EF, 0101 (selected by SFI 1)
     fs_select_file(0, fs_child(df, 0x0102));
-    CHECK_EQ(run(fs_cmd_read_record, "00 B2 01 04 10"), 0x9000);   // SFI 0 = current EF (linear fixed 0102)
+    CHECK_EQ(run(fs_cmd_read_record, "00 B2 01 04 10"), 0x9000); // SFI 0 = current EF (linear fixed 0102)
     CHECK_EQ(s_resp.len, 16);
 }
 
@@ -63,7 +63,7 @@ static void record_checks(void) {
     const fs_file_t *fixed = fs_child(df, 0x0102), *cyc = fs_child(df, 0x0103), *var = fs_child(df, 0x0104);
     CHECK(fixed && cyc && var);
     if (!fixed || !cyc || !var) return;
-    memset(cyc->data, 0, cyc->size);   // both empty
+    memset(cyc->data, 0, cyc->size); // both empty
     memset(var->data, 0, var->size);
     CHECK_EQ(run(sec_cmd_verify, "00 20 00 01 04 31 32 33 34"), 0x9000);
     CHECK_EQ(run(sec_cmd_verify, "00 20 00 81 04 30 30 30 30"), 0x9000);
@@ -71,12 +71,12 @@ static void record_checks(void) {
     // Linear variable EF 0104 (3 x 32): UPDATE / WRITE RECORD address only records that exist.
     fs_select_file(0, var);
     CHECK_EQ(run(fs_cmd_update_record, "00 DC 01 04 03 61 62 63"), 0x6A83);
-    CHECK_EQ(run(fs_cmd_update_record, "00 DC 00 00 01 41"), 0x6A83);   // "first" of an empty EF
-    CHECK_EQ(run(fs_cmd_update_record, "00 DC 00 01 01 41"), 0x6A83);   // "last"
+    CHECK_EQ(run(fs_cmd_update_record, "00 DC 00 00 01 41"), 0x6A83); // "first" of an empty EF
+    CHECK_EQ(run(fs_cmd_update_record, "00 DC 00 01 01 41"), 0x6A83); // "last"
     CHECK_EQ(used(var), 0);
     CHECK_EQ(run(fs_cmd_append_record, "00 E2 00 00 03 61 62 63"), 0x9000);
     CHECK_EQ(used(var), 1);
-    CHECK_EQ(run(fs_cmd_update_record, "00 DC 03 04 01 41"), 0x6A83);   // beyond the records in use
+    CHECK_EQ(run(fs_cmd_update_record, "00 DC 03 04 01 41"), 0x6A83); // beyond the records in use
     CHECK_EQ(run(fs_cmd_write_record, "00 D2 02 04 01 41"), 0x6A83);
     CHECK_EQ(used(var), 1);
     CHECK_EQ(run(fs_cmd_read_record, "00 B2 02 04 00"), 0x6A83);
@@ -87,7 +87,7 @@ static void record_checks(void) {
     CHECK_EQ(run(fs_cmd_update_record, "00 DC 00 02 01 43"), 0x6A83);
     CHECK_EQ(used(var), 1);
     CHECK_EQ(fs_cursor(0)->record, 1);
-    CHECK_EQ(run(fs_cmd_update_record, "00 DC 00 04 01 44"), 0x9000);   // P1 = 00: the current record
+    CHECK_EQ(run(fs_cmd_update_record, "00 DC 00 04 01 44"), 0x9000); // P1 = 00: the current record
     CHECK_EQ(run(fs_cmd_read_record, "00 B2 01 04 00"), 0x9000);
     CHECK_HEX(s_out, s_resp.len, "44");
     // APPEND still adds records up to the capacity; after that the new ones can be updated.
@@ -137,21 +137,21 @@ static void pin_checks(void) {
     // ENABLE / DISABLE VERIFICATION REQUIREMENT P1 = 00 with no data: 6700, the counter is untouched.
     CHECK_EQ(run(sec_cmd_disable_verification, "00 26 00 01"), 0x6700);
     CHECK_EQ(run(sec_cmd_enable_verification, "00 28 00 01"), 0x6700);
-    CHECK_EQ(run(sec_cmd_disable_verification, "00 26 00 01 00"), 0x6700);   // Le only, still no data
+    CHECK_EQ(run(sec_cmd_disable_verification, "00 26 00 01 00"), 0x6700); // Le only, still no data
     CHECK_EQ(p->retries, 3);
     CHECK(!p->disabled);
-    CHECK_EQ(run(sec_cmd_disable_verification, "00 26 01 01 04 31 32 33 34"), 0x6700);   // P1 = 01 takes no data
+    CHECK_EQ(run(sec_cmd_disable_verification, "00 26 01 01 04 31 32 33 34"), 0x6700); // P1 = 01 takes no data
     CHECK(!p->disabled);
     CHECK_EQ(p->retries, 3);
 
     // CHANGE REFERENCE DATA P1 = 00: a new PIN of a bad length is refused before the old PIN costs a try.
-    CHECK_EQ(run(sec_cmd_change_reference_data, "00 24 00 01 06 31 32 33 34 35 36"), 0x6700);   // new: 2 bytes
-    CHECK_EQ(run(sec_cmd_change_reference_data, "00 24 00 01 06 39 39 39 39 35 36"), 0x6700);   // wrong old, too
-    CHECK_EQ(run(sec_cmd_change_reference_data,
-                 "00 24 00 01 0D 31 32 33 34 31 32 33 34 35 36 37 38 39"), 0x6700);               // new: 9 > max 8
-    CHECK_EQ(run(sec_cmd_change_reference_data, "00 24 00 01 04 31 32 33 34"), 0x6700);         // no new PIN
+    CHECK_EQ(run(sec_cmd_change_reference_data, "00 24 00 01 06 31 32 33 34 35 36"), 0x6700); // new: 2 bytes
+    CHECK_EQ(run(sec_cmd_change_reference_data, "00 24 00 01 06 39 39 39 39 35 36"), 0x6700); // wrong old, too
+    CHECK_EQ(run(sec_cmd_change_reference_data, "00 24 00 01 0D 31 32 33 34 31 32 33 34 35 36 37 38 39"),
+             0x6700);                                                                   // new: 9 > max 8
+    CHECK_EQ(run(sec_cmd_change_reference_data, "00 24 00 01 04 31 32 33 34"), 0x6700); // no new PIN
     CHECK_EQ(p->retries, 3);
-    CHECK_EQ(run(sec_cmd_verify, "00 20 00 01 04 31 32 33 34"), 0x9000);   // still 1234
+    CHECK_EQ(run(sec_cmd_verify, "00 20 00 01 04 31 32 33 34"), 0x9000); // still 1234
     sec_reset();
 
     // Block the PIN.
@@ -170,12 +170,12 @@ static void pin_checks(void) {
     // P1 = 00 (PUK + new PIN): no new PIN, a new PIN that is too short or too long.
     CHECK_EQ(run(sec_cmd_reset_retry_counter, "00 2C 00 01 08 31 32 33 34 35 36 37 38"), 0x6700);
     CHECK_EQ(run(sec_cmd_reset_retry_counter, "00 2C 00 01 0A 31 32 33 34 35 36 37 38 35 36"), 0x6700);
-    CHECK_EQ(run(sec_cmd_reset_retry_counter,
-                 "00 2C 00 01 11 31 32 33 34 35 36 37 38 31 32 33 34 35 36 37 38 39"), 0x6700);
+    CHECK_EQ(run(sec_cmd_reset_retry_counter, "00 2C 00 01 11 31 32 33 34 35 36 37 38 31 32 33 34 35 36 37 38 39"),
+             0x6700);
     CHECK_EQ(run(sec_cmd_reset_retry_counter, "00 2C 00 01 07 31 32 33 34 35 36 37"), 0x6700);
     CHECK_EQ(p->puk_retries, 10);
     CHECK_EQ(p->retries, 0);
-    CHECK_EQ(run(sec_cmd_verify, "00 20 00 01 04 31 32 33 34"), 0x6983);   // still blocked
+    CHECK_EQ(run(sec_cmd_verify, "00 20 00 01 04 31 32 33 34"), 0x6983); // still blocked
     // P1 = 02 / 03 need a verified PIN; P1 = 03 takes no data.
     CHECK_EQ(run(sec_cmd_reset_retry_counter, "00 2C 02 01 04 35 36 37 38"), 0x6982);
     CHECK_EQ(run(sec_cmd_reset_retry_counter, "00 2C 03 01"), 0x6982);
@@ -195,7 +195,7 @@ static void pin_checks(void) {
     CHECK_EQ(run(sec_cmd_reset_retry_counter, "00 2C 03 01 01 00"), 0x6700);
     CHECK_EQ(run(sec_cmd_verify, "00 20 00 01 04 30 30 30 30"), 0x63C2);
     CHECK_EQ(run(sec_cmd_verify, "00 20 00 01 04 31 32 33 34"), 0x9000);
-    CHECK_EQ(run(sec_cmd_verify, "00 20 00 01 04 30 30 30 30"), 0x63C2);   // drops the verified status
+    CHECK_EQ(run(sec_cmd_verify, "00 20 00 01 04 30 30 30 30"), 0x63C2); // drops the verified status
     CHECK_EQ(run(sec_cmd_reset_retry_counter, "00 2C 03 01"), 0x6982);
     CHECK_EQ(run(sec_cmd_verify, "00 20 00 01 04 31 32 33 34"), 0x9000);
     CHECK_EQ(run(sec_cmd_reset_retry_counter, "00 2C 03 01"), 0x9000);
@@ -243,7 +243,7 @@ static void transform_checks(void) {
     }
     unsigned logs = g_log_lines;
     sec_init(pins, 2);
-    CHECK_EQ(g_log_lines, logs + 1);   // PIN 11: pin_transform without plain_len
+    CHECK_EQ(g_log_lines, logs + 1); // PIN 11: pin_transform without plain_len
     CHECK(strstr(g_log_last, "PIN 11") && strstr(g_log_last, "plain_len"));
 
     // Without plain_len the old PIN / the PUK cannot be split off: 6F00, and no try is consumed.
@@ -252,7 +252,7 @@ static void transform_checks(void) {
     CHECK_EQ(run(sec_cmd_reset_retry_counter, "00 2C 00 11 0C 31 32 33 34 35 36 37 38 35 36 37 38"), 0x6F00);
     CHECK_EQ(pins[0].retries, 3);
     CHECK_EQ(pins[0].puk_retries, 5);
-    CHECK_EQ(run(sec_cmd_verify, "00 20 00 11 04 31 32 33 34"), 0x9000);   // VERIFY needs no split
+    CHECK_EQ(run(sec_cmd_verify, "00 20 00 11 04 31 32 33 34"), 0x9000); // VERIFY needs no split
 
     // With plain_len = 4 a candidate of another length cannot match: 6700 without a try.
     CHECK_EQ(run(sec_cmd_verify, "00 20 00 12 05 31 32 33 34 35"), 0x6700);

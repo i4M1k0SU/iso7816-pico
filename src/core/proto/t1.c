@@ -1,16 +1,16 @@
 #include "t1.h"
 
-#include "iso7816_pico/apdu.h"
 #include "apdu/dispatch.h"
 #include "hal/phy.h"
+#include "iso7816_pico/apdu.h"
 #include "iso7816_pico/log.h"
 
 #include <string.h>
 
-#define T1_MAX_INF   254
-#define T1_MAX_BLOCK (3 + T1_MAX_INF + 2)
-#define T1_IFS_DEFAULT 32
-#define T1_CWT_MARGIN_US 1000       // polling and ETU rounding slack on top of CWT
+#define T1_MAX_INF       254
+#define T1_MAX_BLOCK     (3 + T1_MAX_INF + 2)
+#define T1_IFS_DEFAULT   32
+#define T1_CWT_MARGIN_US 1000 // polling and ETU rounding slack on top of CWT
 
 // PCB coding
 #define PCB_I_NS   0x40
@@ -25,15 +25,15 @@
 #define S_WTX      3
 
 // R-block error codes (PCB b2..b1)
-#define R_OK         0
-#define R_EDC_ERROR  1
-#define R_OTHER      2
+#define R_OK        0
+#define R_EDC_ERROR 1
+#define R_OTHER     2
 
 static t1_config_t s_cfg;
-static uint8_t s_ns;              // sequence number of our next I-block
-static uint8_t s_nr;              // sequence number we expect from the reader
+static uint8_t s_ns;                    // sequence number of our next I-block
+static uint8_t s_nr;                    // sequence number we expect from the reader
 static uint8_t s_ifsd = T1_IFS_DEFAULT; // reader's maximum INF (S(IFS) changes it)
-static uint8_t s_nad_resp;        // NAD with the address nibbles swapped
+static uint8_t s_nad_resp;              // NAD with the address nibbles swapped
 
 // Command being assembled from chained I-blocks.  On overflow the rest of the chain is acknowledged and discarded, and
 // the command is answered with 6700 when the chain ends (a card-initiated S(ABORT) is not handled by many TPDU-level
@@ -45,7 +45,7 @@ static bool s_cmd_overflow;
 // Nothing else writes to that buffer until the next command is executed, and a new command abandons the chain anyway.
 static const uint8_t *s_resp;
 static uint32_t s_resp_len, s_resp_off;
-static bool s_tx_more;            // we are in the middle of a chained response
+static bool s_tx_more; // we are in the middle of a chained response
 
 // Block kept for retransmission (ISO/IEC 7816-3 11.6.3): only the last I-block we sent (until the reader's next
 // I-block acknowledges it) or the R-block acknowledging the reader's chain.  Error R-blocks and S-blocks are not kept:
@@ -73,7 +73,7 @@ void t1_session_begin(const t1_config_t *cfg) {
     if (!s_cfg.ifsc || s_cfg.ifsc > T1_MAX_INF) s_cfg.ifsc = s_cfg.ifsc ? T1_MAX_INF : T1_IFS_DEFAULT;
     if (s_cfg.cwi > 15) s_cfg.cwi = 13;
     reset_link_state();
-    s_nad_resp = 0;               // an R-block before the first valid block goes out with NAD 0
+    s_nad_resp = 0; // an R-block before the first valid block goes out with NAD 0
     s_errors = 0;
 }
 
@@ -165,10 +165,10 @@ static int drain(void) {
 }
 
 // rx_block() results
-#define RX_RESET  (-1)
-#define RX_OTHER  0         // timeout or LEN = FF
-#define RX_OK     1
-#define RX_EDC    2         // complete block with a bad EDC
+#define RX_RESET (-1)
+#define RX_OTHER 0 // timeout or LEN = FF
+#define RX_OK    1
+#define RX_EDC   2 // complete block with a bad EDC
 
 // Receive one block into blk/len.  After an invalid block the line has been drained (see drain()).
 static int rx_block(int first_byte, uint8_t *blk, size_t *len) {
@@ -181,10 +181,10 @@ static int rx_block(int first_byte, uint8_t *blk, size_t *len) {
     uint32_t cwt = cwt_us();
     for (int i = 1; i < 3; i++) {
         int r = phy_rx_timeout(&blk[n++], cwt);
-        if (r <= 0) return r;                    // RX_RESET or RX_OTHER; a timeout is already CWT of silence
+        if (r <= 0) return r; // RX_RESET or RX_OTHER; a timeout is already CWT of silence
     }
     size_t inf_len = blk[2];
-    if (inf_len > T1_MAX_INF) return drain();    // 255 is RFU; up to 256 more characters may follow (RX_OTHER)
+    if (inf_len > T1_MAX_INF) return drain(); // 255 is RFU; up to 256 more characters may follow (RX_OTHER)
     size_t total = 3 + inf_len + edc_len();
     while (n < total) {
         int r = phy_rx_timeout(&blk[n++], cwt);
@@ -230,8 +230,8 @@ static bool execute_command(void) {
         bool data_ok = sw1 == 0x90 || sw1 == 0x61 || sw1 == 0x62 || sw1 == 0x63;
         if (!data_ok) resp.len = 0;
         if (cmd.le_present && resp.len > cmd.le) resp.len = cmd.le;
-        log_apdu(dispatch_name(cmd.cla, cmd.ins), cmd.cla, cmd.ins, cmd.p1, cmd.p2, cmd.data,
-                 cmd.lc, resp.len ? resp.data : NULL, resp.len, sw);
+        log_apdu(dispatch_name(cmd.cla, cmd.ins), cmd.cla, cmd.ins, cmd.p1, cmd.p2, cmd.data, cmd.lc,
+                 resp.len ? resp.data : NULL, resp.len, sw);
     }
     s_cmd_len = 0;
     s_cmd_overflow = false;
@@ -260,7 +260,7 @@ bool t1_handle_block(int first_byte) {
         s_errors++;
         return send_r(s_nr, r == RX_EDC ? R_EDC_ERROR : R_OTHER);
     }
-    if (blk[0] == 0xFF) return true;                // invalid NAD, ignore
+    if (blk[0] == 0xFF) return true; // invalid NAD, ignore
     s_nad_resp = (uint8_t)((blk[0] << 4) | (blk[0] >> 4));
 
     uint8_t pcb = blk[1];
@@ -288,7 +288,7 @@ bool t1_handle_block(int first_byte) {
             s_tx_more = false;
             s_last_kind = LAST_NONE;
             return send_block(PCB_S | PCB_S_RESP | S_ABORT, NULL, 0, LAST_NONE);
-        default:                                    // WTX is ours to request
+        default: // WTX is ours to request
             return send_r(s_nr, R_OTHER);
         }
     }
@@ -297,7 +297,7 @@ bool t1_handle_block(int first_byte) {
     if ((pcb & PCB_R) == PCB_R) {
         uint8_t nr = (pcb & PCB_R_NR) ? 1 : 0;
         if (s_tx_more && nr == s_ns) return send_next_i_block();       // chain ack
-        if (s_last_kind == LAST_I && nr != s_ns) return resend_last();  // please repeat our last I-block
+        if (s_last_kind == LAST_I && nr != s_ns) return resend_last(); // please repeat our last I-block
         if (s_last_kind == LAST_R_ACK) return resend_last();           // during the reader's chain: repeat the ack
         if (nr != s_ns) return resend_last();                          // nothing to repeat: R(N(R)), other error
         return send_r(s_nr, R_OK);
@@ -313,14 +313,14 @@ bool t1_handle_block(int first_byte) {
     // A new I-block acknowledges our previous one, which is no longer retransmitted.
     s_last_kind = LAST_NONE;
     if (s_cmd_overflow || s_cmd_len + inf_len > APDU_BUF_SIZE) {
-        s_cmd_overflow = true;                      // discard, keep acknowledging, answer 6700 at the end
+        s_cmd_overflow = true; // discard, keep acknowledging, answer 6700 at the end
     } else {
         memcpy(dispatch_cmd_buf() + s_cmd_len, inf, inf_len);
         s_cmd_len += inf_len;
     }
     s_nr ^= 1;
     s_tx_more = false;
-    if (more) {                                     // acknowledge the chain
+    if (more) { // acknowledge the chain
         return send_block((uint8_t)(PCB_R | (s_nr ? PCB_R_NR : 0)), NULL, 0, LAST_R_ACK);
     }
     return execute_command();

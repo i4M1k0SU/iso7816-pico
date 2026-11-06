@@ -16,8 +16,8 @@
 // Parity-error signal as an ordinary frame: release 1 ETU, drive low 2 ETU, release for the rest.  Started right after
 // the parity bit was sampled (9.5 ETU) this drives the line low from ~10.5 to ~12.5 ETU, inside the window ISO 7816-3
 // allows.
-#define ERROR_SIGNAL_FRAME  0x6u   // bits (LSB first): 0,1,1,0,0,...
-#define ERROR_SIGNAL_LOW_END_ETU 3 // the pulse has ended after this many ETU
+#define ERROR_SIGNAL_FRAME       0x6u // bits (LSB first): 0,1,1,0,0,...
+#define ERROR_SIGNAL_LOW_END_ETU 3    // the pulse has ended after this many ETU
 
 // A character popped from the RX FIFO later than this after its push (9.5 ETU) gets no error signal: the pulse would
 // start after the reader's check at 11 +- 0.2 ETU and run into its next character.  In 1/10 ETU.
@@ -29,12 +29,12 @@
 #define TX_REPEAT_MAX 4
 
 // Generous upper bound for "the clock stopped / reader went away".
-#define TX_CHAR_TIMEOUT_US  200000
+#define TX_CHAR_TIMEOUT_US 200000
 
 // Smallest ETU (in clock cycles) the PIO loops can follow; the system clock side of the same limit is
 // PHY_MIN_SYSCLK_PER_CLK in phy.h.
 #define PHY_MIN_ETU_CLKS    8
-#define PHY_MAX_EXTRA_GUARD 20     // frame must fit in one 32-bit FIFO word
+#define PHY_MAX_EXTRA_GUARD 20 // frame must fit in one 32-bit FIFO word
 
 // ---- Pin checks ---------------------------------------------------------------------------------------------------
 // The card contacts and the self-test pins are compile-time constants, so a bad configuration fails the build instead
@@ -54,8 +54,8 @@
 #if ISO7816_SELFTEST_PIN_CLK == ISO7816_SELFTEST_PIN_IO
 #error "ISO7816_SELFTEST_PIN_CLK and ISO7816_SELFTEST_PIN_IO must be different GPIOs"
 #endif
-#if ISO7816_SELFTEST_PIN_CLK == ISO7816_PIN_IO || ISO7816_SELFTEST_PIN_CLK == ISO7816_PIN_CLK || \
-    ISO7816_SELFTEST_PIN_CLK == ISO7816_PIN_RST || ISO7816_SELFTEST_PIN_IO == ISO7816_PIN_IO || \
+#if ISO7816_SELFTEST_PIN_CLK == ISO7816_PIN_IO || ISO7816_SELFTEST_PIN_CLK == ISO7816_PIN_CLK ||                       \
+    ISO7816_SELFTEST_PIN_CLK == ISO7816_PIN_RST || ISO7816_SELFTEST_PIN_IO == ISO7816_PIN_IO ||                        \
     ISO7816_SELFTEST_PIN_IO == ISO7816_PIN_CLK || ISO7816_SELFTEST_PIN_IO == ISO7816_PIN_RST
 #error "the self-test pins must not be card contacts (ISO7816_PIN_*): the test drives a clock on them"
 #endif
@@ -75,10 +75,10 @@ static uint s_frame_bits = 12;
 
 static volatile bool s_rst_fell;
 static bool s_in_reset = true;
-static bool s_ignore_reset;        // self-test: RST is not driven by anyone
-static absolute_time_t s_first_echo_time;  // when phy_tx() saw its first echo
+static bool s_ignore_reset;               // self-test: RST is not driven by anyone
+static absolute_time_t s_first_echo_time; // when phy_tx() saw its first echo
 static bool s_first_echo_valid;
-static absolute_time_t s_echo_times[2];    // first two echoes of the last phy_tx()
+static absolute_time_t s_echo_times[2]; // first two echoes of the last phy_tx()
 static absolute_time_t s_tx_start;
 static absolute_time_t s_session_t0;
 
@@ -98,7 +98,7 @@ static bool s_rx_empty_seen_valid;
 static absolute_time_t s_tx_end;
 static bool s_tx_end_valid;
 
-static uint32_t s_tx_index;          // characters sent in this session (diagnostic parity injection)
+static uint32_t s_tx_index; // characters sent in this session (diagnostic parity injection)
 static uint32_t s_bad_parity_index = UINT32_MAX;
 static uint32_t s_bad_parity_count;
 
@@ -108,8 +108,8 @@ static absolute_time_t s_trace_t0;
 
 static phy_stats_t s_stats;
 static void (*s_idle_hook)(void);
-static uint s_io_gpio = ISO7816_PIN_IO;   // the I/O line (a spare pin during the self-test)
-static bool s_dbg_error_low_seen;        // the last error signal really drove the line low
+static uint s_io_gpio = ISO7816_PIN_IO; // the I/O line (a spare pin during the self-test)
+static bool s_dbg_error_low_seen;       // the last error signal really drove the line low
 
 static void trace_reset(void) {
     s_trace_len = 0;
@@ -146,7 +146,7 @@ static void clk_counter_init(void) {
 
 // Count CLK rising edges for a short window: X starts at ~0 and the program decrements it per edge.
 static uint32_t measure_clk_hz(uint32_t window_us) {
-    pio_sm_init(s_pio_cnt, s_sm_cnt, s_off_cnt, &s_cfg_cnt);   // disabled, FIFOs cleared, PC at `top`
+    pio_sm_init(s_pio_cnt, s_sm_cnt, s_off_cnt, &s_cfg_cnt); // disabled, FIFOs cleared, PC at `top`
     pio_sm_exec(s_pio_cnt, s_sm_cnt, pio_encode_mov_not(pio_x, pio_null));
     pio_sm_set_enabled(s_pio_cnt, s_sm_cnt, true);
     busy_wait_us(window_us);
@@ -164,8 +164,7 @@ static uint32_t measure_clk_hz(uint32_t window_us) {
 static void patch_wait_gpio(const pio_program_t *prog, uint offset, uint to_gpio) {
     for (uint i = 0; i < prog->length; i++) {
         uint16_t ins = prog->instructions[i];
-        if ((ins & 0xE000u) == 0x2000u && ((ins >> 5) & 3u) == 0 &&
-            (ins & 0x1Fu) == ISO7816_CLK_GPIO) {
+        if ((ins & 0xE000u) == 0x2000u && ((ins >> 5) & 3u) == 0 && (ins & 0x1Fu) == ISO7816_CLK_GPIO) {
             s_pio->instr_mem[offset + i] = (ins & ~0x1Fu) | (to_gpio & 0x1Fu);
         }
     }
@@ -243,8 +242,7 @@ static void sm_load_isr(PIO pio, uint sm, uint32_t value) {
 }
 
 static void tx_set_frame_bits(uint bits) {
-    hw_write_masked(&s_pio->sm[s_sm_tx].shiftctrl,
-                    (bits & 31u) << PIO_SM0_SHIFTCTRL_PULL_THRESH_LSB,
+    hw_write_masked(&s_pio->sm[s_sm_tx].shiftctrl, (bits & 31u) << PIO_SM0_SHIFTCTRL_PULL_THRESH_LSB,
                     PIO_SM0_SHIFTCTRL_PULL_THRESH_BITS);
 }
 
@@ -260,8 +258,8 @@ static inline bool even_parity(uint8_t b) {
 //   direct : logic 1 = line high, LSB first      -> data bits = ~b
 //   inverse: logic 1 = line low,  MSB first      -> data bits = reverse(b)
 static inline uint32_t make_frame(uint8_t b) {
-    uint32_t frame = 1u;                           // start bit
-    bool p = even_parity(b);                       // parity bit (logic value)
+    uint32_t frame = 1u;     // start bit
+    bool p = even_parity(b); // parity bit (logic value)
     if (!s_params.inverse) {
         frame |= (uint32_t)(~b & 0xFF) << 1;
         frame |= (uint32_t)(p ? 0 : 1) << 9;
@@ -271,7 +269,7 @@ static inline uint32_t make_frame(uint8_t b) {
         }
         frame |= (uint32_t)(p ? 1 : 0) << 9;
     }
-    return frame;                                  // remaining bits = 0 (released)
+    return frame; // remaining bits = 0 (released)
 }
 
 // Decode a raw 9-bit RX word (bit k = line state of the k-th bit received).
@@ -355,7 +353,7 @@ static void sm_configure(void) {
     tx_set_frame_bits(s_frame_bits);
     pio_sm_exec(s_pio, s_sm_tx, pio_encode_mov(pio_osr, pio_null));
 
-    s_pio->fdebug = RX_STALL_BIT;   // a stall from before this configuration is not an overrun of this session
+    s_pio->fdebug = RX_STALL_BIT; // a stall from before this configuration is not an overrun of this session
     pio_sm_set_enabled(s_pio, s_sm_tx, true);
     pio_sm_set_enabled(s_pio, s_sm_rx, true);
     s_rx_empty_seen = get_absolute_time();
@@ -396,19 +394,19 @@ void phy_init(void) {
     s_off_tx = pio_add_program(s_pio, &iso7816_tx_program);
     patch_clk_gpio(ISO7816_PIN_CLK);
     clk_counter_init();
-    s_stats.sys_clk_hz = clock_get_hz(clk_sys);   // the state machines run undivided
+    s_stats.sys_clk_hz = clock_get_hz(clk_sys); // the state machines run undivided
 
     s_cfg_rx = iso7816_rx_program_get_default_config(s_off_rx);
     sm_config_set_in_pins(&s_cfg_rx, ISO7816_PIN_IO);
-    sm_config_set_in_shift(&s_cfg_rx, true, false, 32);     // right, no autopush
-    sm_config_set_fifo_join(&s_cfg_rx, PIO_FIFO_JOIN_RX);    // 8-deep RX FIFO
+    sm_config_set_in_shift(&s_cfg_rx, true, false, 32);   // right, no autopush
+    sm_config_set_fifo_join(&s_cfg_rx, PIO_FIFO_JOIN_RX); // 8-deep RX FIFO
     sm_config_set_clkdiv_int_frac(&s_cfg_rx, 1, 0);
 
     s_cfg_tx = iso7816_tx_program_get_default_config(s_off_tx);
     sm_config_set_out_pins(&s_cfg_tx, ISO7816_PIN_IO, 1);
-    sm_config_set_out_shift(&s_cfg_tx, true, true, 12);     // right, autopull (threshold set later)
-    sm_config_set_in_shift(&s_cfg_tx, true, false, 32);     // only for sm_load_isr()
-    sm_config_set_fifo_join(&s_cfg_tx, PIO_FIFO_JOIN_TX);    // 8-deep TX FIFO
+    sm_config_set_out_shift(&s_cfg_tx, true, true, 12);   // right, autopull (threshold set later)
+    sm_config_set_in_shift(&s_cfg_tx, true, false, 32);   // only for sm_load_isr()
+    sm_config_set_fifo_join(&s_cfg_tx, PIO_FIFO_JOIN_TX); // 8-deep TX FIFO
     sm_config_set_clkdiv_int_frac(&s_cfg_tx, 1, 0);
 
     phy_enter_reset();
@@ -532,7 +530,7 @@ static int rx_pop(uint8_t *byte) {
     uint32_t w = pio_sm_get(s_pio, s_sm_rx);
     uint8_t b = decode_byte(w);
     int64_t waited = s_rx_empty_seen_valid ? absolute_time_diff_us(s_rx_empty_seen, now) : INT32_MAX;
-    if (level > 1) waited = INT32_MAX;               // the one behind arrived >= 12 ETU after this one
+    if (level > 1) waited = INT32_MAX; // the one behind arrived >= 12 ETU after this one
     if (waited < INT32_MAX && (uint64_t)waited > s_stats.rx_max_latency_us) {
         s_stats.rx_max_latency_us = (uint32_t)waited;
     }
@@ -552,7 +550,7 @@ static int rx_pop(uint8_t *byte) {
 
 bool phy_rx(uint8_t *byte, bool idle) {
     for (;;) {
-        watchdog_update();   // waiting for the reader is legitimate, not a hang
+        watchdog_update(); // waiting for the reader is legitimate, not a hang
         int r = rx_pop(byte);
         if (r == 1) {
             s_stats.rx_chars++;
@@ -610,7 +608,7 @@ static void tx_echo(uint32_t w, size_t index, uint8_t b, uint32_t frame, bool *m
     // The echo pushes 9.5 ETU into the frame; the frame ends 12 + N ETU after its start.
     s_tx_end = delayed_by_us(now, etu_tenths_us(s_frame_bits * 10 - 95));
     s_tx_end_valid = true;
-    if ((w & 0x1FF) != (~frame >> 1 & 0x1FF)) {   // frame bit 1 = line low
+    if ((w & 0x1FF) != (~frame >> 1 & 0x1FF)) { // frame bit 1 = line low
         s_stats.tx_echo_errors++;
         if (!*mismatch_logged) {
             *mismatch_logged = true;
@@ -623,7 +621,7 @@ static void tx_echo(uint32_t w, size_t index, uint8_t b, uint32_t frame, bool *m
 
 static bool tx_abort(const char *why) {
     s_stats.last_error = why;
-    s_bad_parity_count = 0;   // a diagnostic injection does not outlive the transfer it broke
+    s_bad_parity_count = 0; // a diagnostic injection does not outlive the transfer it broke
     return false;
 }
 
@@ -631,7 +629,7 @@ static bool tx_abort(const char *why) {
 static bool tx_stream(const uint8_t *data, size_t len) {
     size_t pushed = 0, echoed = 0;
     bool mismatch_logged = false;
-    uint32_t frames[8];   // the TX FIFO is 8 deep, so at most 8 frames are in flight
+    uint32_t frames[8]; // the TX FIFO is 8 deep, so at most 8 frames are in flight
     absolute_time_t deadline = make_timeout_time_us(TX_CHAR_TIMEOUT_US);
 
     while (echoed < len) {
@@ -678,7 +676,7 @@ static bool tx_repeating(const uint8_t *data, size_t len) {
     for (size_t i = 0; i < len; i++) {
         for (unsigned attempt = 0;; attempt++) {
             uint32_t frame = next_frame(data[i]);
-            pio_sm_put(s_pio, s_sm_tx, frame);   // the TX FIFO is empty: every frame waits for its echo
+            pio_sm_put(s_pio, s_sm_tx, frame); // the TX FIFO is empty: every frame waits for its echo
 
             absolute_time_t deadline = make_timeout_time_us(TX_CHAR_TIMEOUT_US);
             while (pio_sm_is_rx_fifo_empty(s_pio, s_sm_rx)) {
@@ -704,7 +702,7 @@ static bool tx_repeating(const uint8_t *data, size_t len) {
                     high_at = get_absolute_time();
                 }
             }
-            if (rx_idle() && pio_sm_is_rx_fifo_empty(s_pio, s_sm_rx)) break;   // accepted
+            if (rx_idle() && pio_sm_is_rx_fifo_empty(s_pio, s_sm_rx)) break; // accepted
 
             // Error signal (or something else pulled the line low after our character).
             if (is_nil_time(high_at)) {
@@ -715,8 +713,8 @@ static bool tx_repeating(const uint8_t *data, size_t len) {
                 }
                 high_at = get_absolute_time();
             }
-            trace_add('E', is_nil_time(low_at) ? 0 : (uint16_t)(95 + us_to_etu_tenths(absolute_time_diff_us(echo,
-                                                                                                    low_at))));
+            trace_add('E',
+                      is_nil_time(low_at) ? 0 : (uint16_t)(95 + us_to_etu_tenths(absolute_time_diff_us(echo, low_at))));
             trace_add('e', (uint16_t)(95 + us_to_etu_tenths(absolute_time_diff_us(echo, high_at))));
             // Repeat at least 2 ETU after the line came back high (and so after the detection).
             busy_wait_until(delayed_by_us(high_at, etu_tenths_us(20)));
@@ -745,7 +743,7 @@ bool phy_tx(const uint8_t *data, size_t len) {
     bool ok = s_params.error_signal ? tx_repeating(data, len) : tx_stream(data, len);
     if (!ok) return false;
     s_stats.tx_chars += len;
-    s_last_rx_valid = false;   // next turnaround is reader -> card, no wait needed
+    s_last_rx_valid = false; // next turnaround is reader -> card, no wait needed
     // All echoes are in, so the FIFO is empty now: the next rx_pop() measures its latency from here.
     s_rx_empty_seen = get_absolute_time();
     s_rx_empty_seen_valid = true;
@@ -761,7 +759,7 @@ const phy_stats_t *phy_stats(void) { return &s_stats; }
 // ---------------------------------------------------------------------------
 #define SELFTEST_CLK_PIN ISO7816_SELFTEST_PIN_CLK
 #define SELFTEST_IO_PIN  ISO7816_SELFTEST_PIN_IO
-#define SELFTEST_CLK_DIV 32   // clkgen: system clock cycles per test clock period
+#define SELFTEST_CLK_DIV 32 // clkgen: system clock cycles per test clock period
 
 #if !ISO7816_SELFTEST_ENABLED
 void phy_selftest(char *msg, size_t cap) {
@@ -770,9 +768,9 @@ void phy_selftest(char *msg, size_t cap) {
 #else
 void phy_selftest(char *msg, size_t cap) {
     static const uint8_t atr[] = { 0x3B, 0x08, 'P', 'i', 'c', 'o', '7', '8', '1', '6' };
-    const uint32_t selftest_clk_hz = clock_get_hz(clk_sys) / SELFTEST_CLK_DIV;   // 3.9 MHz at 125 MHz
+    const uint32_t selftest_clk_hz = clock_get_hz(clk_sys) / SELFTEST_CLK_DIV; // 3.9 MHz at 125 MHz
     PIO pio_clk = pio1;
-    const uint sm_clk = (uint)pio_claim_unused_sm(pio_clk, true);   // the clock counter holds another one
+    const uint sm_clk = (uint)pio_claim_unused_sm(pio_clk, true); // the clock counter holds another one
 
     // Test clock generator on the other PIO block.
     uint off_clk = pio_add_program(pio_clk, &clkgen_program);
@@ -838,7 +836,7 @@ void phy_selftest(char *msg, size_t cap) {
     if (ok) {
         phy_params_t q = PHY_PARAMS_DEFAULT;
         phy_apply_params(&q);
-        pio_sm_put(s_pio, s_sm_tx, make_frame(0x5A) ^ (1u << 9));   // flipped parity bit
+        pio_sm_put(s_pio, s_sm_tx, make_frame(0x5A) ^ (1u << 9)); // flipped parity bit
         uint8_t b;
         int r = 0;
         absolute_time_t deadline = make_timeout_time_ms(50);
@@ -856,14 +854,12 @@ void phy_selftest(char *msg, size_t cap) {
              "(expect %lu) | F/D=372/4 inverse: %s, ETU %lld us (expect %lu), echo err %lu | "
              "parity error: %s, line low: %s",
              ok ? "OK" : "FAILED", (unsigned long)s_stats.dbg_delay_us,
-             (unsigned long)((12ull * 2 + 19) * 372 / 2 * 1000000ull / selftest_clk_hz),
-             (unsigned long)clk_from_echo, (unsigned long)selftest_clk_hz,
-             (unsigned long)s_stats.tx_echo_errors, (unsigned long)s_stats.dbg_echo_index,
-             (unsigned long)s_stats.dbg_echo_expected, (unsigned long)s_stats.dbg_echo_got,
-             s_stats.last_error ? s_stats.last_error : "-", (long long)rx_etu, (long long)tx_etu,
-             (unsigned long)(372ull * 1000000ull / selftest_clk_hz),
-             fast_ok ? "OK" : "FAILED", (long long)fast_etu,
-             (unsigned long)(93ull * 1000000ull / selftest_clk_hz), (unsigned long)fast_errors,
+             (unsigned long)((12ull * 2 + 19) * 372 / 2 * 1000000ull / selftest_clk_hz), (unsigned long)clk_from_echo,
+             (unsigned long)selftest_clk_hz, (unsigned long)s_stats.tx_echo_errors,
+             (unsigned long)s_stats.dbg_echo_index, (unsigned long)s_stats.dbg_echo_expected,
+             (unsigned long)s_stats.dbg_echo_got, s_stats.last_error ? s_stats.last_error : "-", (long long)rx_etu,
+             (long long)tx_etu, (unsigned long)(372ull * 1000000ull / selftest_clk_hz), fast_ok ? "OK" : "FAILED",
+             (long long)fast_etu, (unsigned long)(93ull * 1000000ull / selftest_clk_hz), (unsigned long)fast_errors,
              perr_ok ? "detected" : "MISSED", perr_low ? "yes" : "NO");
 
     // Put everything back.

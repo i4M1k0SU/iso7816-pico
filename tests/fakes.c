@@ -1,10 +1,10 @@
 // Host replacements for the modules that touch Pico hardware: logging, card services, RNG.  (The NVM is the real
 // hal/nvm.c over the RAM port in fake_nvm.c.)
-#include "iso7816_pico/card.h"
 #include "hal/nvm.h"
+#include "iso7816_pico/card.h"
+#include "iso7816_pico/log.h"
 #include "proto/t0.h"
 #include "proto/t1.h"
-#include "iso7816_pico/log.h"
 
 #include "fakes.h"
 
@@ -41,8 +41,10 @@ void log_drain(void) {}
 
 // card/card.h services (sys/services.c is not compiled on the host).
 void card_keepalive(void) {
-    if (g_fake_protocol == 1) t1_keepalive();
-    else t0_keepalive();
+    if (g_fake_protocol == 1)
+        t1_keepalive();
+    else
+        t0_keepalive();
 }
 
 uint8_t card_protocol(void) { return g_fake_protocol; }

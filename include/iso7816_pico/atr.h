@@ -14,15 +14,15 @@
 #define ATR_TC 0x4
 
 typedef struct {
-    uint8_t present;    // ATR_TA | ATR_TB | ATR_TC
+    uint8_t present; // ATR_TA | ATR_TB | ATR_TC
     uint8_t ta, tb, tc;
-    uint8_t protocol;   // T indicated in TD(i-1) for level i >= 2 (ignored for level 1)
+    uint8_t protocol; // T indicated in TD(i-1) for level i >= 2 (ignored for level 1)
 } atr_level_t;
 
 typedef struct {
-    bool inverse;                  // TS = 3F instead of 3B
-    atr_level_t level[4];          // interface byte levels 1..4
-    uint8_t levels;                // 1..4; TD(i) is emitted for i < levels
+    bool inverse;         // TS = 3F instead of 3B
+    atr_level_t level[4]; // interface byte levels 1..4
+    uint8_t levels;       // 1..4; TD(i) is emitted for i < levels
     uint8_t historical[15];
     uint8_t historical_len;
 } atr_desc_t;
@@ -34,17 +34,17 @@ size_t atr_build(const atr_desc_t *d, uint8_t *out, size_t cap);
 // card).
 typedef struct {
     bool inverse;
-    uint16_t f;                 // from TA1 (372 if absent, or if TA2 says "implicit values")
-    uint8_t d;                  // from TA1 (1 if absent, or if TA2 says "implicit values")
-    uint8_t n;                  // extra guard time from TC1 (0 if absent)
-    bool specific_mode;         // TA2 present: no PPS, switch to f / d right after the ATR, run specific_protocol
-    uint8_t specific_protocol;  // T from TA2 bits 4..1 (only meaningful in specific mode)
-    uint8_t first_protocol;     // T offered first (0 if no TD1)
-    uint16_t protocols;         // bit t set when T=t is offered
-    uint8_t wi;                 // T=0 waiting time integer (TC2, default 10)
-    uint8_t ifsc;               // T=1: TA(i>2) (default 32)
-    uint8_t cwi, bwi;           // T=1: TB(i>2) (defaults 13 / 4)
-    bool crc;                   // T=1: TC(i>2) bit 0 (LRC otherwise)
+    uint16_t f;                // from TA1 (372 if absent, or if TA2 says "implicit values")
+    uint8_t d;                 // from TA1 (1 if absent, or if TA2 says "implicit values")
+    uint8_t n;                 // extra guard time from TC1 (0 if absent)
+    bool specific_mode;        // TA2 present: no PPS, switch to f / d right after the ATR, run specific_protocol
+    uint8_t specific_protocol; // T from TA2 bits 4..1 (only meaningful in specific mode)
+    uint8_t first_protocol;    // T offered first (0 if no TD1)
+    uint16_t protocols;        // bit t set when T=t is offered
+    uint8_t wi;                // T=0 waiting time integer (TC2, default 10)
+    uint8_t ifsc;              // T=1: TA(i>2) (default 32)
+    uint8_t cwi, bwi;          // T=1: TB(i>2) (defaults 13 / 4)
+    bool crc;                  // T=1: TC(i>2) bit 0 (LRC otherwise)
     bool valid;
 } atr_info_t;
 

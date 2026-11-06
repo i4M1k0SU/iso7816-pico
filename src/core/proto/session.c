@@ -1,11 +1,11 @@
 #include "session.h"
 
 #include "apdu/dispatch.h"
+#include "hal/phy.h"
 #include "iso7816_pico/atr.h"
 #include "iso7816_pico/card.h"
-#include "hal/phy.h"
-#include "pps.h"
 #include "iso7816_pico/log.h"
+#include "pps.h"
 #include "t0.h"
 #include "t1.h"
 
@@ -56,13 +56,15 @@ static void warn_slow_sysclk(void) {
 }
 
 static void set_protocol_params(phy_params_t *p, uint8_t t) {
-    p->error_signal = t == 0;              // character repetition is a T=0 thing
-    p->turnaround_etu = t == 0 ? 16 : 22;  // BGT for T=1
+    p->error_signal = t == 0;             // character repetition is a T=0 thing
+    p->turnaround_etu = t == 0 ? 16 : 22; // BGT for T=1
 }
 
 void session_keepalive(void) {
-    if (s_protocol == 1) t1_keepalive();
-    else t0_keepalive();
+    if (s_protocol == 1)
+        t1_keepalive();
+    else
+        t0_keepalive();
 }
 
 void session_run(void) {
@@ -75,9 +77,8 @@ void session_run(void) {
 
     if (!phy_start_session(&p) || !phy_tx(s_atr, s_atr_len)) {
         const phy_stats_t *st = phy_stats();
-        log_printf("ATR aborted: %s (CLK ~ %lu Hz, echo errors %lu)",
-                   st->last_error ? st->last_error : "?", (unsigned long)st->clk_hz,
-                   (unsigned long)st->tx_echo_errors);
+        log_printf("ATR aborted: %s (CLK ~ %lu Hz, echo errors %lu)", st->last_error ? st->last_error : "?",
+                   (unsigned long)st->clk_hz, (unsigned long)st->tx_echo_errors);
         warn_slow_sysclk();
         return;
     }
@@ -128,7 +129,7 @@ void session_run(void) {
             s_protocol = r.protocol;
             set_protocol_params(&p, s_protocol);
             phy_apply_params(&p);
-            first = false;         // ISO 7816-3 9.1: one PPS exchange, directly after the ATR
+            first = false; // ISO 7816-3 9.1: one PPS exchange, directly after the ATR
             continue;
         }
         first = false;

@@ -1,7 +1,7 @@
 #include "iso7816_pico/fs.h"
 
-#include "iso7816_pico/card.h"
 #include "hal/nvm.h"
+#include "iso7816_pico/card.h"
 #include "iso7816_pico/sec.h"
 
 #include <string.h>
@@ -39,8 +39,7 @@ fs_cursor_t *fs_cursor(uint8_t ch) { return &s_cursor[ch < CARD_MAX_CHANNELS ? c
 
 static bool is_df(const fs_file_t *f) { return f && f->type == FS_DF; }
 static bool is_record_ef(const fs_file_t *f) {
-    return f && (f->type == FS_EF_LINEAR_FIXED || f->type == FS_EF_LINEAR_VARIABLE ||
-                 f->type == FS_EF_CYCLIC);
+    return f && (f->type == FS_EF_LINEAR_FIXED || f->type == FS_EF_LINEAR_VARIABLE || f->type == FS_EF_CYCLIC);
 }
 
 // ---------------------------------------------------------------------------
@@ -54,8 +53,7 @@ const fs_file_t *fs_child(const fs_file_t *df, uint16_t fid) {
     return NULL;
 }
 
-const fs_file_t *fs_by_name(const uint8_t *name, size_t len, bool partial,
-                            const fs_file_t *after) {
+const fs_file_t *fs_by_name(const uint8_t *name, size_t len, bool partial, const fs_file_t *after) {
     bool passed = after == NULL;
     for (size_t i = 0; i < s_n; i++) {
         const fs_file_t *f = &s_files[i];
@@ -88,7 +86,7 @@ const fs_file_t *fs_by_path(const fs_file_t *from, const uint8_t *path, size_t l
     const fs_file_t *f = from;
     for (size_t i = 0; i < len; i += 2) {
         uint16_t fid = (uint16_t)((path[i] << 8) | path[i + 1]);
-        if (i == 0 && fid == 0x3F00 && from == fs_mf()) continue;   // leading MF id
+        if (i == 0 && fid == 0x3F00 && from == fs_mf()) continue; // leading MF id
         f = fs_child(f, fid);
         if (!f) return NULL;
     }
@@ -114,8 +112,14 @@ void fs_select_file(uint8_t ch, const fs_file_t *f) {
 
 static uint16_t rec_used(const fs_file_t *ef) { return (uint16_t)(ef->data[0] | (ef->data[1] << 8)); }
 static uint16_t rec_head(const fs_file_t *ef) { return (uint16_t)(ef->data[2] | (ef->data[3] << 8)); }
-static void rec_set_used(const fs_file_t *ef, uint16_t v) { ef->data[0] = (uint8_t)v; ef->data[1] = (uint8_t)(v >> 8); }
-static void rec_set_head(const fs_file_t *ef, uint16_t v) { ef->data[2] = (uint8_t)v; ef->data[3] = (uint8_t)(v >> 8); }
+static void rec_set_used(const fs_file_t *ef, uint16_t v) {
+    ef->data[0] = (uint8_t)v;
+    ef->data[1] = (uint8_t)(v >> 8);
+}
+static void rec_set_head(const fs_file_t *ef, uint16_t v) {
+    ef->data[2] = (uint8_t)v;
+    ef->data[3] = (uint8_t)(v >> 8);
+}
 static uint16_t slot_size(const fs_file_t *ef) {
     return (uint16_t)(ef->rec_size + (ef->type == FS_EF_LINEAR_VARIABLE ? 2 : 0));
 }
@@ -129,7 +133,7 @@ static uint8_t *slot_ptr(const fs_file_t *ef, uint16_t slot) {
 
 uint16_t fs_record_count(const fs_file_t *ef) {
     if (!is_record_ef(ef)) return 0;
-    if (ef->type == FS_EF_LINEAR_FIXED) return rec_capacity(ef);   // fully allocated: every record exists
+    if (ef->type == FS_EF_LINEAR_FIXED) return rec_capacity(ef); // fully allocated: every record exists
     uint16_t used = rec_used(ef), cap = rec_capacity(ef);
     return used < cap ? used : cap;
 }
@@ -184,7 +188,7 @@ bool fs_record_erase(const fs_file_t *ef, uint16_t n) {
     uint16_t slot;
     if (!rec_slot(ef, n, &slot)) return false;
     // Erasing does not create a record: the number of records in use and the cyclic head stay as they are.
-    memset(slot_ptr(ef, slot), 0, slot_size(ef));   // linear variable: the stored length becomes 0 as well
+    memset(slot_ptr(ef, slot), 0, slot_size(ef)); // linear variable: the stored length becomes 0 as well
     return true;
 }
 
@@ -201,7 +205,7 @@ bool fs_record_append(const fs_file_t *ef, const uint8_t *in, uint16_t len, uint
     }
     if (used >= cap) return false;
     *n_out = (uint16_t)(used + 1);
-    rec_set_used(ef, *n_out);   // the new record exists from here on
+    rec_set_used(ef, *n_out); // the new record exists from here on
     return fs_record_write(ef, *n_out, in, len);
 }
 
@@ -240,10 +244,10 @@ void fs_put_fcp(apdu_resp_t *resp, const fs_file_t *f, uint8_t template_tag) {
             tmp[0] = (uint8_t)(f->sfi << 3);
             resp_put_tlv(&b, 0x88, tmp, 1);
         }
-        tmp[0] = 0x05;                               // operational state (activated)
+        tmp[0] = 0x05; // operational state (activated)
         resp_put_tlv(&b, 0x8A, tmp, 1);
         if (!is_df(f)) {
-            tmp[0] = f->ac_read;                     // proprietary: read / update conditions
+            tmp[0] = f->ac_read; // proprietary: read / update conditions
             tmp[1] = f->ac_update;
             resp_put_tlv(&b, 0x86, tmp, 2);
         }
@@ -315,13 +319,13 @@ static uint16_t record_target(const apdu_t *cmd, const fs_file_t **ef) {
 // ---------------------------------------------------------------------------
 
 uint16_t fs_cmd_select(const apdu_t *cmd, apdu_resp_t *resp) {
-    if (!fs_present()) return SW_FILE_NOT_FOUND;   // no file system: nothing to select (see above)
+    if (!fs_present()) return SW_FILE_NOT_FOUND; // no file system: nothing to select (see above)
     fs_cursor_t *c = fs_cursor(cmd->channel);
     const fs_file_t *f = NULL;
     uint16_t fid = cmd->lc >= 2 ? (uint16_t)((cmd->data[0] << 8) | cmd->data[1]) : 0;
 
     switch (cmd->p1) {
-    case 0x00:   // MF, DF or EF by identifier
+    case 0x00: // MF, DF or EF by identifier
         if (cmd->lc == 0 || (cmd->lc == 2 && fid == 0x3F00)) {
             f = fs_mf();
         } else if (cmd->lc == 2) {
@@ -332,17 +336,17 @@ uint16_t fs_cmd_select(const apdu_t *cmd, apdu_resp_t *resp) {
             return SW_WRONG_LENGTH;
         }
         break;
-    case 0x01:   // child DF
+    case 0x01: // child DF
         if (cmd->lc != 2) return SW_WRONG_LENGTH;
         f = fs_child(c->df, fid);
         if (f && !is_df(f)) f = NULL;
         break;
-    case 0x02:   // EF under the current DF
+    case 0x02: // EF under the current DF
         if (cmd->lc != 2) return SW_WRONG_LENGTH;
         f = fs_child(c->df, fid);
         if (f && is_df(f)) f = NULL;
         break;
-    case 0x03:   // parent DF
+    case 0x03: // parent DF
         if (cmd->lc != 0) return SW_WRONG_LENGTH;
         f = c->df->parent ? c->df->parent : c->df;
         break;
@@ -351,10 +355,10 @@ uint16_t fs_cmd_select(const apdu_t *cmd, apdu_resp_t *resp) {
         f = fs_by_name(cmd->data, cmd->lc, true, next ? c->df : NULL);
         break;
     }
-    case 0x08:   // path from the MF
+    case 0x08: // path from the MF
         f = fs_by_path(fs_mf(), cmd->data, cmd->lc);
         break;
-    case 0x09:   // path from the current DF
+    case 0x09: // path from the current DF
         f = fs_by_path(c->df, cmd->data, cmd->lc);
         break;
     default:
@@ -364,10 +368,17 @@ uint16_t fs_cmd_select(const apdu_t *cmd, apdu_resp_t *resp) {
 
     fs_select_file(cmd->channel, f);
     switch (cmd->p2 & 0x0C) {
-    case 0x00: fs_put_fcp(resp, f, 0x6F); break;   // FCI
-    case 0x04: fs_put_fcp(resp, f, 0x62); break;   // FCP
-    case 0x08: fs_put_fcp(resp, f, 0x64); break;   // FMD
-    default: break;                                // no response data
+    case 0x00:
+        fs_put_fcp(resp, f, 0x6F);
+        break; // FCI
+    case 0x04:
+        fs_put_fcp(resp, f, 0x62);
+        break; // FCP
+    case 0x08:
+        fs_put_fcp(resp, f, 0x64);
+        break; // FMD
+    default:
+        break; // no response data
     }
     return SW_OK;
 }
@@ -427,8 +438,10 @@ uint16_t fs_cmd_erase_binary(const apdu_t *cmd, apdu_resp_t *resp) {
     if (sw != SW_OK) return sw;
     if (!fs_access_ok(cmd->channel, ef, FS_OP_UPDATE)) return SW_SECURITY_STATUS;
     uint32_t end = ef->size;
-    if (cmd->lc == 2) end = (uint32_t)((cmd->data[0] << 8) | cmd->data[1]);
-    else if (cmd->lc) return SW_WRONG_LENGTH;
+    if (cmd->lc == 2)
+        end = (uint32_t)((cmd->data[0] << 8) | cmd->data[1]);
+    else if (cmd->lc)
+        return SW_WRONG_LENGTH;
     if (off > ef->size || end > ef->size || end < off) return SW_WRONG_P1P2_2;
     memset(ef->data + off, 0, end - off);
     file_changed(ef);
@@ -447,12 +460,23 @@ static uint16_t resolve_record(const apdu_t *cmd, const fs_file_t *ef) {
     uint16_t count = fs_record_count(ef);
     uint16_t n = 0;
     switch (cmd->p2 & 0x07) {
-    case 0x00: n = count ? 1 : 0; break;                         // first
-    case 0x01: n = count; break;                                 // last
-    case 0x02: n = (uint16_t)(c->record + 1); break;             // next
-    case 0x03: n = c->record > 1 ? (uint16_t)(c->record - 1) : 0; break;   // previous
-    case 0x04: n = cmd->p1 ? cmd->p1 : c->record; break;         // by number (00 = current)
-    default: return 0;
+    case 0x00:
+        n = count ? 1 : 0;
+        break; // first
+    case 0x01:
+        n = count;
+        break; // last
+    case 0x02:
+        n = (uint16_t)(c->record + 1);
+        break; // next
+    case 0x03:
+        n = c->record > 1 ? (uint16_t)(c->record - 1) : 0;
+        break; // previous
+    case 0x04:
+        n = cmd->p1 ? cmd->p1 : c->record;
+        break; // by number (00 = current)
+    default:
+        return 0;
     }
     if (n == 0 || n > count) return 0;
     c->record = n;

@@ -1,13 +1,13 @@
+#include "fake_nvm.h"
+#include "fakes.h"
+#include "hal/nvm.h"
 #include "iso7816_pico/apdu.h"
 #include "iso7816_pico/card.h"
 #include "iso7816_pico/config.h"
 #include "iso7816_pico/sec.h"
-#include "fake_nvm.h"
-#include "hal/nvm.h"
-#include "fakes.h"
 #include "test.h"
 
-#define BLOB 600   // header + 600 bytes -> one 4 KB slot
+#define BLOB 600 // header + 600 bytes -> one 4 KB slot
 
 static void fill(uint8_t *b, uint8_t seed) {
     for (int i = 0; i < BLOB; i++) b[i] = (uint8_t)(seed + i * 7);
@@ -33,7 +33,7 @@ void test_nvm(void) {
     // Identical image: nothing is written.
     CHECK_EQ(nvm_save(blob, BLOB), NVM_SAVE_UNCHANGED);
     CHECK_EQ(fake_nvm_erase_count(), 1);
-    CHECK_EQ(fake_nvm_program_count(), 3);   // 624 bytes = 3 pages, from the first save only
+    CHECK_EQ(fake_nvm_program_count(), 3); // 624 bytes = 3 pages, from the first save only
 
     // A changed image goes to the next slot; the previous slot keeps the old image.
     fill(blob, 2);
@@ -44,7 +44,7 @@ void test_nvm(void) {
     CHECK_EQ(back[0], blob[0]);
 
     // Corrupt the newest slot (power loss in the middle of a write): the older image is used again.
-    fake_nvm_raw()[4096 + 40] ^= 0xFF;          // a byte of the blob
+    fake_nvm_raw()[4096 + 40] ^= 0xFF; // a byte of the blob
     CHECK(nvm_load(back, BLOB));
     CHECK_EQ(nvm_status()->slot, 0);
     CHECK_EQ(nvm_status()->seq, 1);
@@ -64,7 +64,7 @@ void test_nvm(void) {
         CHECK_EQ(nvm_save(blob, BLOB), NVM_SAVE_WRITTEN);
     }
     CHECK_EQ(fake_nvm_erase_count(), erases + slots);
-    CHECK_EQ(nvm_status()->slot, 1);                  // (1 + slots) % slots
+    CHECK_EQ(nvm_status()->slot, 1); // (1 + slots) % slots
     CHECK_EQ(nvm_status()->seq, 2 + slots);
     CHECK(nvm_load(back, BLOB));
     CHECK_EQ(back[0], (uint8_t)(10 + slots - 1));
@@ -94,13 +94,13 @@ void test_nvm(void) {
     // Rewrite slot 0's sequence number to the maximum (bits only clear, so erase and program the slot again).
     nvm_erase_all();
     CHECK_EQ(nvm_save(blob, BLOB), NVM_SAVE_WRITTEN);
-    memcpy(hdr + 8, &wrap, 4);                       // seq field of the header in slot 0
+    memcpy(hdr + 8, &wrap, 4); // seq field of the header in slot 0
     // The CRC covers the blob only, so the slot stays valid with seq = 0xFFFFFFFF.
     fill(blob, 2);
     CHECK_EQ(nvm_save(blob, BLOB), NVM_SAVE_WRITTEN);
-    CHECK_EQ(nvm_status()->seq, 0);                  // wrapped
+    CHECK_EQ(nvm_status()->seq, 0); // wrapped
     CHECK(nvm_load(back, BLOB));
-    CHECK_EQ(back[0], blob[0]);                      // the wrapped one is the newest
+    CHECK_EQ(back[0], blob[0]); // the wrapped one is the newest
 
     // Factory reset.
     CHECK(nvm_erase_all());
@@ -114,9 +114,9 @@ void test_nvm(void) {
     CHECK(!nvm_take_dirty());
 
     // A blob for which the region offers a single slot is refused: a save would erase the only image first.
-    static uint8_t one_slot[40000], one_back[40000];   // 40024 bytes -> 40 KB slot, one in 64 KB
+    static uint8_t one_slot[40000], one_back[40000]; // 40024 bytes -> 40 KB slot, one in 64 KB
     CHECK(!NVM_BLOB_FITS(sizeof one_slot));
-    CHECK(NVM_BLOB_FITS(NVM_FLASH_BYTES / 2 - 24));      // exactly two slots is fine
+    CHECK(NVM_BLOB_FITS(NVM_FLASH_BYTES / 2 - 24)); // exactly two slots is fine
     CHECK(!NVM_BLOB_FITS(NVM_FLASH_BYTES / 2 - 23));
     CHECK(!nvm_fits(sizeof one_slot));
     fake_nvm_reset();
@@ -209,13 +209,13 @@ void test_nvm_layout(void) {
     CHECK_EQ(nvm_status()->stored_layout, 0x00010002);
     nvm_take_dirty();
     CHECK_EQ(nvm_save(s_lay_blob, BLOB), NVM_SAVE_WRITTEN);
-    CHECK_EQ(nvm_status()->seq, 3);                 // continues after the newest image, whatever its layout
+    CHECK_EQ(nvm_status()->seq, 3); // continues after the newest image, whatever its layout
     CHECK_EQ(nvm_status()->slot, 2);
 
     // With a hook that accepts: the migrated image is used and saved soon after.
     fake_nvm_reset();
     fill(s_lay_blob, 5);
-    CHECK_EQ(nvm_save(s_lay_blob, BLOB), NVM_SAVE_WRITTEN);   // version 1
+    CHECK_EQ(nvm_save(s_lay_blob, BLOB), NVM_SAVE_WRITTEN); // version 1
     p.nvm_version = 3;
     p.hooks.nvm_migrate = lay_migrate;
     s_mig_accept = true;
@@ -227,7 +227,7 @@ void test_nvm_layout(void) {
     CHECK_EQ(s_mig_size, BLOB);
     CHECK_EQ(s_mig_first, 5);
     CHECK_EQ(s_lay_blob[0], 6);
-    CHECK_EQ(s_lay_blob[1], 0xD0);                  // what the hook did not set keeps its default
+    CHECK_EQ(s_lay_blob[1], 0xD0); // what the hook did not set keeps its default
     CHECK(nvm_status()->migrated);
     CHECK(strstr(g_log_last, "migrated to layout 00010003") != NULL);
     CHECK(nvm_is_dirty());
@@ -235,7 +235,7 @@ void test_nvm_layout(void) {
     CHECK_EQ(nvm_save(s_lay_blob, BLOB), NVM_SAVE_WRITTEN);
     s_mig_calls = 0;
     CHECK(nvm_load(s_lay_blob, BLOB));
-    CHECK_EQ(s_mig_calls, 0);                       // now it is this layout
+    CHECK_EQ(s_mig_calls, 0); // now it is this layout
     CHECK(!nvm_status()->migrated);
 
     // A size change with the same version also goes through the hook (old_size tells).
@@ -280,7 +280,7 @@ void test_nvm_layout(void) {
     nvm_take_dirty();
     CHECK_EQ(nvm_save(s_lay_blob, BLOB), NVM_SAVE_WRITTEN);
     CHECK_EQ(nvm_status()->seq, 42);
-    CHECK_EQ(nvm_status()->slot, 1);                // slot 0 (the old image) is kept until the new one is written
+    CHECK_EQ(nvm_status()->slot, 1); // slot 0 (the old image) is kept until the new one is written
     CHECK(nvm_load(s_lay_blob, BLOB));
     // ... and a hook can read it.
     fake_nvm_reset();
@@ -340,15 +340,15 @@ void test_nvm_pin_durability(void) {
     nvm_take_dirty();
     CHECK_EQ(run(sec_cmd_verify, "00 20 00 01 04 31 31 31 31"), SW_WARN_COUNTER(retries - 1));
     CHECK_EQ(pin->retries, retries - 1);
-    CHECK_EQ(fake_nvm_erase_count(), 1);                // saved synchronously, inside the command
+    CHECK_EQ(fake_nvm_erase_count(), 1); // saved synchronously, inside the command
     CHECK_EQ(stored_pin01().retries, retries - 1);
-    CHECK(!nvm_is_dirty());                             // nothing left over for the deferred save
+    CHECK(!nvm_is_dirty()); // nothing left over for the deferred save
 
     // A correct PIN restores the counter in RAM (and leaves the deferred save to write it).
     CHECK_EQ(run(sec_cmd_verify, "00 20 00 01 04 31 32 33 34"), SW_OK);
     CHECK_EQ(pin->retries, retries);
     CHECK(nvm_is_dirty());
-    CHECK_EQ(stored_pin01().retries, retries - 2);      // the decrement of this try reached the flash, too
+    CHECK_EQ(stored_pin01().retries, retries - 2); // the decrement of this try reached the flash, too
     CHECK_EQ(nvm_save(card_profile->nvm_blob, card_profile->nvm_size), NVM_SAVE_WRITTEN);
     nvm_take_dirty();
     CHECK_EQ(stored_pin01().retries, retries);

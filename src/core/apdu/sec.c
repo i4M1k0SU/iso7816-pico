@@ -1,9 +1,9 @@
 #include "iso7816_pico/sec.h"
 
+#include "hal/nvm.h"
 #include "iso7816_pico/card.h"
 #include "iso7816_pico/fs.h"
 #include "iso7816_pico/log.h"
-#include "hal/nvm.h"
 
 #include "pico/rand.h"
 
@@ -11,7 +11,7 @@
 
 static sec_pin_t *s_pins;
 static size_t s_n;
-static uint32_t s_verified[CARD_MAX_CHANNELS];   // bit i = pin i verified
+static uint32_t s_verified[CARD_MAX_CHANNELS]; // bit i = pin i verified
 _Static_assert(SEC_MAX_PINS <= 32, "s_verified has one bit per PIN");
 static uint8_t s_challenge[SEC_CHALLENGE_MAX];
 static size_t s_challenge_len;
@@ -34,7 +34,8 @@ void sec_init(sec_pin_t *pins, size_t n) {
         }
         if (transform && !p->plain_len) {
             log_printf("SEC: PIN %02X: pin_transform without plain_len: CHANGE REFERENCE DATA P1=00 and RESET RETRY "
-                       "COUNTER P1=00/01 answer 6F00", p->ref);
+                       "COUNTER P1=00/01 answer 6F00",
+                       p->ref);
         }
     }
     sec_reset();
@@ -69,8 +70,10 @@ void sec_set_verified(uint8_t ch, uint8_t ref, bool verified) {
     const sec_pin_t *p = sec_find(ref);
     if (!p || ch >= CARD_MAX_CHANNELS) return;
     uint32_t bit = 1u << pin_index(p);
-    if (verified) s_verified[ch] |= bit;
-    else s_verified[ch] &= ~bit;
+    if (verified)
+        s_verified[ch] |= bit;
+    else
+        s_verified[ch] &= ~bit;
 }
 
 bool sec_access_ok(uint8_t ch, uint8_t ac) {
@@ -140,9 +143,9 @@ static void persist_counter(const char *why) {
         nvm_mark_dirty();
         return;
     }
-    nvm_take_dirty();   // other pending changes go out with this save
+    nvm_take_dirty(); // other pending changes go out with this save
     if (nvm_save_logged(card_profile->nvm_blob, card_profile->nvm_size, why) == NVM_SAVE_FAILED) {
-        nvm_mark_dirty();   // retried by the runtime's deferred save
+        nvm_mark_dirty(); // retried by the runtime's deferred save
     }
 }
 
@@ -155,7 +158,7 @@ static uint16_t try_pin(uint8_t ch, sec_pin_t *p, const uint8_t *cand, size_t le
     uint8_t form[SEC_PIN_MAX_LEN];
     size_t n = stored_form(p, cand, len, form);
     if (n && n == p->len && equal(form, p->value, n)) {
-        p->retries = p->max_retries;   // restored in RAM; saved by the deferred save
+        p->retries = p->max_retries; // restored in RAM; saved by the deferred save
         nvm_mark_dirty();
         sec_set_verified(ch, p->ref, true);
         return SW_OK;
@@ -265,7 +268,7 @@ uint16_t sec_cmd_reset_retry_counter(const apdu_t *cmd, apdu_resp_t *resp) {
     case 0x01: {
         if (!p->puk_len) return SW_REF_DATA_NOT_FOUND;
         size_t puk_plain = plain_len(p, p->puk_len);
-        if (puk_plain == 0) return SW_UNKNOWN;   // pin_transform without plain_len (logged at boot)
+        if (puk_plain == 0) return SW_UNKNOWN; // pin_transform without plain_len (logged at boot)
         new_pin_t np = { .len = 0 };
         if (cmd->p1 == 0x00) {
             if (cmd->lc <= puk_plain) return SW_WRONG_LENGTH;
@@ -276,7 +279,7 @@ uint16_t sec_cmd_reset_retry_counter(const apdu_t *cmd, apdu_resp_t *resp) {
         }
         uint16_t sw = try_puk(p, cmd->data, puk_plain);
         if (sw != SW_OK) return sw;
-        if (cmd->p1 == 0x00) commit_pin(p, &np);   // also restores the PIN retry counter
+        if (cmd->p1 == 0x00) commit_pin(p, &np); // also restores the PIN retry counter
         p->retries = p->max_retries;
         nvm_mark_dirty();
         return SW_OK;
@@ -339,7 +342,7 @@ uint16_t sec_cmd_get_challenge(const apdu_t *cmd, apdu_resp_t *resp) {
 uint16_t sec_cmd_external_authenticate(const apdu_t *cmd, apdu_resp_t *resp) {
     if (!card_profile->hooks.external_authenticate) return SW_FUNC_NOT_SUPPORTED;
     uint16_t sw = card_profile->hooks.external_authenticate(cmd, resp);
-    s_challenge_len = 0;                 // a challenge is good for one attempt
+    s_challenge_len = 0; // a challenge is good for one attempt
     return sw;
 }
 

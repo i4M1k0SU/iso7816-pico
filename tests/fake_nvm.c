@@ -30,7 +30,7 @@ bool nvm_port_erase(uint32_t offset, size_t len) {
 
 bool nvm_port_program(uint32_t offset, const uint8_t *data, size_t len) {
     if (offset % NVM_PAGE_BYTES || len % NVM_PAGE_BYTES || offset + len > NVM_FLASH_BYTES) return false;
-    for (size_t i = 0; i < len; i++) s_flash[offset + i] &= data[i];   // bits only go 1 -> 0
+    for (size_t i = 0; i < len; i++) s_flash[offset + i] &= data[i]; // bits only go 1 -> 0
     s_programs++;
     return true;
 }

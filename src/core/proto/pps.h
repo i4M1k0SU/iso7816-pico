@@ -10,8 +10,8 @@
 #include "hal/phy.h"
 
 typedef struct {
-    uint8_t protocol;      // T selected by PPS0
-    bool fd_changed;       // PPS1 accepted: f / d below apply
+    uint8_t protocol; // T selected by PPS0
+    bool fd_changed;  // PPS1 accepted: f / d below apply
     uint16_t f;
     uint8_t d;
 } pps_result_t;
