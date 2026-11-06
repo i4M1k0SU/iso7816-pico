@@ -109,6 +109,105 @@ void test_t0(void) {
     CHECK_EQ(r.len, 248);
     CHECK_EQ(r.data[247], 247);
 
+    // ENVELOPE with an inner extended case 2 (Lc = 0, Le = 4 = the response length): the ENVELOPE TPDU is case 3, so
+    // the data comes through 61 xx / GET RESPONSE, not as a second ACK + data (the reader model flags that as an
+    // error and t0r_tpdu fails).
+    fake_phy_tx_clear();
+    CHECK(tpdu("00 C2 00 00 07 80 30 00 00 00 00 04", &r));
+    CHECK_EQ(r.sw, 0x6104);
+    CHECK_EQ(r.len, 0);
+    tx = fake_phy_tx_log(&n);
+    CHECK_EQ(n, 3);                              // ACK for the ENVELOPE data, then 61 04 and nothing else
+    CHECK_EQ(tx[0], 0xC2);
+    CHECK(tpdu("00 C0 00 00 04", &r));
+    CHECK_EQ(r.sw, 0x9000);
+    CHECK_EQ(r.len, 4);
+    counter = ((uint32_t)r.data[0] << 24) | ((uint32_t)r.data[1] << 16) | ((uint32_t)r.data[2] << 8) | r.data[3];
+    // Inner Le (16) differs from the response length: still 61 04, never 6C xx to the ENVELOPE.
+    CHECK(tpdu("00 C2 00 00 07 80 30 00 00 00 00 10", &r));
+    CHECK_EQ(r.sw, 0x6104);
+    CHECK(apdu("00 C2 00 00 07 80 30 00 00 00 00 00", &r));   // Le = 65536, through the PC/SC-like model
+    CHECK_EQ(r.sw, 0x9000);
+    CHECK_EQ(r.len, 4);
+    CHECK_EQ(r.data[3], (counter + 2) & 0xFF);   // one execution per ENVELOPE (the previous one was discarded)
+
+    // ENVELOPE with an inner extended case 4 (ECHO, Lc = 3, Le = 65536).
+    CHECK(tpdu("00 C2 00 00 0C 80 20 00 00 00 00 03 AA BB CC 00 00", &r));
+    CHECK_EQ(r.sw, 0x6103);
+    CHECK(tpdu("00 C0 00 00 03", &r));
+    CHECK_EQ(r.sw, 0x9000);
+    CHECK_HEX(r.data, r.len, "AA BB CC");
+
+    // A partial header (3 bytes, then silence) is dropped without an answer; the next full header works.
+    uint32_t timeouts = fake_phy_rx_timeouts();
+    fake_phy_tx_clear();
+    fake_phy_push_hex("80 30 00");
+    CHECK(t0_handle_command(-1));
+    tx = fake_phy_tx_log(&n);
+    CHECK_EQ(n, 0);
+    CHECK_EQ(fake_phy_rx_timeouts(), timeouts + 1);
+    CHECK(tpdu("80 30 00 00 04", &r));
+    CHECK_EQ(r.sw, 0x9000);
+    CHECK_EQ(r.len, 4);
+    // The deadline is WWT = 960 x D x WI ETU (fake PHY: ETU 93 us, rounded up to 94; D as an earlier PPS left it).
+    uint32_t d = phy_params()->d;
+    CHECK_EQ(fake_phy_last_timeout_us(), 960u * 10 * d * 94);
+    t0_set_wi(2);
+    CHECK(tpdu("80 30 00 00 04", &r));
+    CHECK_EQ(fake_phy_last_timeout_us(), 960u * 2 * d * 94);
+    t0_set_wi(0);                                // reserved value: back to the default
+    CHECK(tpdu("80 30 00 00 04", &r));
+    CHECK_EQ(fake_phy_last_timeout_us(), 960u * 10 * d * 94);
+    // A stray character followed by silence does not shift the next header.
+    fake_phy_tx_clear();
+    fake_phy_push_hex("3F");
+    fake_phy_push_gap();
+    fake_phy_push_hex("80 30 00 00 04");
+    CHECK(t0_handle_command(-1));
+    tx = fake_phy_tx_log(&n);
+    CHECK_EQ(n, 0);
+    CHECK_EQ(fake_phy_pending(), 5);
+    fake_phy_clear();
+    CHECK(tpdu("80 30 00 00 04", &r));
+    CHECK_EQ(r.sw, 0x9000);
+    // The same with the session layer passing the first byte (as session_run() does).
+    fake_phy_tx_clear();
+    CHECK(t0_handle_command(0x3F));
+    tx = fake_phy_tx_log(&n);
+    CHECK_EQ(n, 0);
+
+    // A data field that stops short is dropped: the card sent only the ACK, and the next command works.
+    fake_phy_tx_clear();
+    fake_phy_push_hex("80 20 00 00 04 DE AD");
+    CHECK(t0_handle_command(-1));
+    tx = fake_phy_tx_log(&n);
+    CHECK_EQ(n, 1);
+    CHECK_EQ(tx[0], 0x20);
+    CHECK_EQ(fake_phy_pending(), 0);
+    CHECK(apdu("80 20 00 00 02 01 02", &r));
+    CHECK_EQ(r.sw, 0x9000);
+    CHECK_HEX(r.data, r.len, "01 02");
+    // Same for an ENVELOPE piece: the chain is discarded, so a following short ENVELOPE stands alone.
+    fake_phy_tx_clear();
+    fake_phy_push_hex("00 C2 00 00 FF 80 20 00 00");
+    CHECK(t0_handle_command(-1));
+    tx = fake_phy_tx_log(&n);
+    CHECK_EQ(n, 1);
+    CHECK(apdu("00 C2 00 00 09 80 20 00 00 00 00 02 01 02", &r));
+    CHECK_EQ(r.sw, 0x9000);
+    CHECK_HEX(r.data, r.len, "01 02");
+
+    // Case 2 whose handler returns no data with 90 00 (MANAGE CHANNEL open with P2 = 01 answers no channel number):
+    // SW only, no ACK and no 6C xx (6C 00 would mean La = 256).
+    fake_phy_tx_clear();
+    CHECK(tpdu("00 70 00 01 01", &r));
+    CHECK_EQ(r.sw, 0x9000);
+    CHECK_EQ(r.len, 0);
+    tx = fake_phy_tx_log(&n);
+    CHECK_EQ(n, 2);
+    CHECK(tpdu("00 70 80 01 00", &r));           // close it again
+    CHECK_EQ(r.sw, 0x9000);
+
     // The reader asserting RST in the middle of a command aborts it.
     fake_phy_push_hex("80 20 00 00 04 DE AD");
     fake_phy_set_reset(true);

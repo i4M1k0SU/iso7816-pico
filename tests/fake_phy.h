@@ -9,6 +9,9 @@
 // Bytes the card will receive next (reader -> card).
 void fake_phy_push(const uint8_t *data, size_t len);
 void fake_phy_push_hex(const char *hex);
+// The reader goes silent before the next pushed byte: phy_rx_timeout() reports one timeout there (phy_rx(), which
+// waits without a deadline, does not notice).  Cleared by fake_phy_clear().
+void fake_phy_push_gap(void);
 size_t fake_phy_pending(void);
 void fake_phy_clear(void);
 
@@ -24,4 +27,5 @@ void fake_phy_set_reset(bool asserted);
 
 // Counters.
 uint32_t fake_phy_apply_count(void);     // phy_apply_params() calls
-uint32_t fake_phy_rx_timeouts(void);     // phy_rx_timeout() calls that found the queue empty
+uint32_t fake_phy_rx_timeouts(void);     // phy_rx_timeout() calls that found the queue empty (or a gap)
+uint32_t fake_phy_last_timeout_us(void); // timeout_us of the last phy_rx_timeout() call
