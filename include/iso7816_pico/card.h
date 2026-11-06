@@ -170,7 +170,8 @@ void card_keepalive(void);
 // Protocol in use for the current session (0 or 1).
 uint8_t card_protocol(void);
 
-// Mark the NVM blob changed; it is written to flash once the session ends.
+// Mark the NVM blob changed; it is written to flash once the card is idle (NVM_IDLE_SAVE_MS without traffic) or RST
+// goes low.
 void card_nvm_changed(void);
 
 // Reboot into BOOTSEL (UF2 drive) once the current response has been sent.

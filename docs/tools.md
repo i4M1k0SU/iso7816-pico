@@ -79,7 +79,7 @@ all checks passed
   透過 EF の READ/UPDATE/チェイニング、PIN の VERIFY/CHANGE/RESET RETRY (PUK)、SELECT (FID / 子 DF / 親 / パス / DF 名) と FCP、
   固定長・可変長・サイクリックレコード、SEARCH RECORD、GET DATA、GET CHALLENGE + EXTERNAL/INTERNAL AUTHENTICATE フック、
   論理チャネル (MANAGE CHANNEL とチャネルごとのセキュリティ状態)、拡張長 APDU (T=0: ENVELOPE 300 バイト、T=1: 1000 バイトの Lc/Le)。
-* NVM: セッション中に書き換えた EF や PIN カウンタが RST 解除後にフラッシュへ保存され、電源再投入後も残る。
+* NVM: セッション中に書き換えた EF はアイドル時に、PIN カウンタは照合のたびにフラッシュへ保存され、電源再投入後も残る。
 
 ## ホスト側テスト
 

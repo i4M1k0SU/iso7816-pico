@@ -355,10 +355,10 @@ static void cmd_save(const char *args) {
         log_printf("this profile has no NVM blob");
         return;
     }
-    nvm_save_result_t r = nvm_save(card_profile->nvm_blob, card_profile->nvm_size);
-    log_printf("NVM save: %s (slot %lu, seq %lu)",
-               r == NVM_SAVE_WRITTEN ? "ok" : r == NVM_SAVE_UNCHANGED ? "unchanged" : "FAILED",
-               (unsigned long)nvm_status()->slot, (unsigned long)nvm_status()->seq);
+    nvm_take_dirty();
+    if (nvm_save_logged(card_profile->nvm_blob, card_profile->nvm_size, "(console)") == NVM_SAVE_FAILED) {
+        nvm_mark_dirty();
+    }
 }
 
 static void cmd_erase(const char *args) {

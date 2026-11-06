@@ -38,7 +38,10 @@
    ATR が特定モード (TA2 あり) なら PPS には応じず、ATR 送出の直後に `phy_apply_params()` で TA1 の F/D へ切り替える。
 3. `session.c` が T=0 (`t0.c`) または T=1 (`t1.c`) のコマンドループを回す。
 4. 両トランスポートは完全な APDU を組み立てて `dispatch_process()` に渡し、SW と応答データを受け取る。
-5. RST Low で `phy_enter_reset()`、NVM が dirty なら保存 (内容が変わっていなければ書かない。スロット方式の詳細は
+5. コマンド待ちのアイドル処理 (`phy_rx()` の `idle` 引数で呼ばれる `idle_service()`) は、NVM が dirty で文字の送受信が
+   `NVM_IDLE_SAVE_MS` (200 ms) 途絶えていれば保存する。T=1 では保存中 (50-100 ms、割り込み停止) に届いたブロックが
+   8 段の受信 FIFO からあふれうるが、リーダーの再送で回復する。PIN / PUK の試行回数は `sec.c` が照合前に同期で保存する。
+6. RST Low で `phy_enter_reset()`、NVM がまだ dirty なら保存 (内容が変わっていなければ書かない。スロット方式の詳細は
    [card-profile.md](card-profile.md) の「永続データ」)。
 
 ### T=0 の ENVELOPE の終端
