@@ -3,7 +3,7 @@
 #include "fake_nvm.h"
 #include "hal/nvm.h"
 
-#include "config.h"
+#include "iso7816_pico/config.h"
 
 #include <string.h>
 

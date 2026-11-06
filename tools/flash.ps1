@@ -10,7 +10,7 @@
   already in BOOTSEL mode.
 
 .PARAMETER NoBuild
-  Skip cmake/ninja and only flash build/iso7816-pico.uf2.
+  Skip cmake/ninja and only flash build/examples/demo/iso7816-pico-demo.uf2.
 #>
 param(
     [switch]$NoBuild
@@ -39,7 +39,7 @@ if (-not $NoBuild) {
     if ($LASTEXITCODE) { throw "build failed" }
 }
 
-$uf2 = Join-Path $root 'build\iso7816-pico.uf2'
+$uf2 = Join-Path $root 'build\examples\demo\iso7816-pico-demo.uf2'
 picotool load -f -x $uf2
 if ($LASTEXITCODE) { throw "picotool load failed (is the Pico connected over USB?)" }
 Write-Host "flashed $uf2"

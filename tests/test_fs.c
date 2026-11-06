@@ -1,6 +1,6 @@
 // ERASE RECORD (0C) and ERASE BINARY (0E) over T=0 against the demo card profile.
 #include "apdu/dispatch.h"
-#include "apdu/fs.h"
+#include "iso7816_pico/fs.h"
 #include "fake_phy.h"
 #include "fakes.h"
 #include "proto/t0.h"

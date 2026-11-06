@@ -1,4 +1,4 @@
-#include "card/card.h"
+#include "iso7816_pico/card.h"
 #include "fake_phy.h"
 #include "fakes.h"
 #include "proto/session.h"

@@ -1,4 +1,4 @@
-#include "proto/atr.h"
+#include "iso7816_pico/atr.h"
 #include "test.h"
 
 static const uint8_t HIST[8] = { 'P', 'i', 'c', 'o', '7', '8', '1', '6' };

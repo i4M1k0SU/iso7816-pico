@@ -11,7 +11,7 @@
 # shipped with picotool (udev/99-picotool.rules).
 #
 #   tools/flash.sh              cmake + ninja, then flash
-#   tools/flash.sh --no-build   flash build/iso7816-pico.uf2 only
+#   tools/flash.sh --no-build   flash build/examples/demo/iso7816-pico-demo.uf2 only
 set -euo pipefail
 
 usage() {
@@ -56,6 +56,6 @@ if [ "$no_build" = 0 ]; then
     ninja -C "$root/build"
 fi
 
-uf2="$root/build/iso7816-pico.uf2"
+uf2="$root/build/examples/demo/iso7816-pico-demo.uf2"
 picotool load -f -x "$uf2"
 echo "flashed $uf2"

@@ -21,8 +21,11 @@ jobs:
         run: ctest --test-dir build-tests --output-on-failure
 
   firmware:
-    name: Firmware (RP2040)
+    name: Demo firmware (${{ matrix.board }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        board: [pico, pico2]
     env:
       PICO_SDK_VERSION: 2.3.1
     steps:
@@ -41,11 +44,39 @@ jobs:
             gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib \
             ninja-build libusb-1.0-0-dev
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DPICO_SDK_PATH=${{ github.workspace }}/pico-sdk
+        run: >
+          cmake -S . -B build -G Ninja
+          -DPICO_SDK_PATH=${{ github.workspace }}/pico-sdk
+          -DPICO_BOARD=${{ matrix.board }}
       - name: Build
         run: cmake --build build
       - name: Upload the UF2
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: iso7816-pico-uf2
-          path: build/iso7816-pico.uf2
+          name: iso7816-pico-demo-${{ matrix.board }}
+          path: build/examples/demo/iso7816-pico-demo.uf2
+
+  embedding:
+    name: Embedding contract (tests/embed)
+    runs-on: ubuntu-latest
+    env:
+      PICO_SDK_VERSION: 2.3.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out the Pico SDK
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: ${{ env.PICO_SDK_VERSION }}
+          submodules: true
+          path: pico-sdk
+      - name: Install the ARM toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib \
+            ninja-build libusb-1.0-0-dev
+      - name: Configure a consumer project
+        run: cmake -S tests/embed -B build-embed -G Ninja -DPICO_SDK_PATH=${{ github.workspace }}/pico-sdk
+      - name: Build
+        run: cmake --build build-embed
