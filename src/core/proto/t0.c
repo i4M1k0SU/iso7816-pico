@@ -98,6 +98,10 @@ static bool handle_get_response(const uint8_t hdr[5]) {
 // Answer a command whose response data is in *resp.
 static bool send_response(const uint8_t hdr[5], apdu_case_t kind, uint32_t le,
                           const apdu_resp_t *resp, uint16_t sw) {
+    // No data, also for a case 2 command whose handler produced none (ISO 7816-4: Ne is a maximum, Nr = 0 <= Ne is a
+    // valid response): SW1 SW2 straight away instead of the ACK, which ISO 7816-3:2006 10.3.3 allows.  This is not
+    // "wrong Le": 6C xx announces an La > 0 (6C 00 would mean La = 256), so the case 2 mapping (7816-3 12.2.3) ends
+    // with the plain status, e.g. 90 00.
     if (resp->len == 0 || !sw_allows_data(sw)) return send_sw(sw);
 
     s_pending = resp->data;

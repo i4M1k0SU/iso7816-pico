@@ -197,6 +197,17 @@ void test_t0(void) {
     CHECK_EQ(r.sw, 0x9000);
     CHECK_HEX(r.data, r.len, "01 02");
 
+    // Case 2 whose handler returns no data with 90 00 (MANAGE CHANNEL open with P2 = 01 answers no channel number):
+    // SW only, no ACK and no 6C xx (6C 00 would mean La = 256).
+    fake_phy_tx_clear();
+    CHECK(tpdu("00 70 00 01 01", &r));
+    CHECK_EQ(r.sw, 0x9000);
+    CHECK_EQ(r.len, 0);
+    tx = fake_phy_tx_log(&n);
+    CHECK_EQ(n, 2);
+    CHECK(tpdu("00 70 80 01 00", &r));           // close it again
+    CHECK_EQ(r.sw, 0x9000);
+
     // The reader asserting RST in the middle of a command aborts it.
     fake_phy_push_hex("80 20 00 00 04 DE AD");
     fake_phy_set_reset(true);
