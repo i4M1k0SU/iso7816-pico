@@ -133,6 +133,47 @@ cmake -S tests -B build-tests -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 jq -r '.[].file' build-tests/compile_commands.json | xargs clang-tidy -p build-tests --quiet
 ```
 
+### ファジング
+
+`tests/fuzz/` には、リーダーから届くバイト列を解釈するコアの入口を libFuzzer で叩くハーネスがある。ホスト側テストと同じく
+コアとデモカードをホスト用にコンパイルし、偽の PHY と RAM 上の NVM (`tests/fake_phy.c` / `tests/fake_nvm.c`) につなぐ。
+AddressSanitizer と UndefinedBehaviorSanitizer を併用し、どちらかが報告するか、ハーネスの検査が成り立たなければ止まる。
+
+- `fuzz_apdu`: `apdu_decode()` に任意のバイト列を渡す。復号できたら Lc / Le / データの位置が入力長とちょうど合うこと。
+- `fuzz_atr`: `atr_parse()` で生の ATR を解析し、同じバイト列から作った記述を `atr_build()` → `atr_parse()` で往復させる。
+  F/D、プロトコル、T=1 のパラメータなどが記述どおりに読め、どこで切り詰めても不正と判定されること。
+- `fuzz_pps`: `pps_handle()`。先頭 3 バイトが提示プロトコル、現在の F/D、`pps_accept` の有無で、残りが PPSS 以降の要求。
+  応答する場合は PCK が正しく、要求された PPS1 しか認めないこと。拒否するときは何も送らないこと。
+- `fuzz_t0`: `t0_handle_command()` にリーダーからのバイト列を流す (先頭バイトの bit 0 で途中に WWT 切れを挟む形式になる)。
+  デモのディスパッチャ、ファイルシステム、PIN まで実際の入口から通る。
+- `fuzz_t1`: `t1_handle_block()`。先頭 2 バイトが LRC / CRC、入力形式、IFSC。生のバイト列か、ハーネスが EDC を付ける
+  ブロック列 (CRC でもコマンド層まで届く) を流す。カードの送ったブロックがすべて LEN ≦ 254 で EDC が正しいこと。
+- `fuzz_nvm`: `nvm_load()` / `nvm_save()`。セクタ先頭に書く断片で作ったフラッシュ像 (CRC を合わせる指定、移行フックの
+  有無、ブロブサイズの選択つき) を読み込み、その上に保存したものが次の読み込みでそのまま戻ること。
+
+各入力の前に、プロファイル、NVM ブロブ (ファイルと PIN)、フラッシュ、PHY、乱数、ディスパッチャ / fs / sec / T=0 / T=1 の
+状態を ATR 直後と同じに戻すので、結果は入力だけで決まる (例外はデモアプレットの GET COUNTER の値で、リセットを越えて残る)。
+
+clang (libFuzzer は compiler-rt に含まれる) でビルドし、コーパスを渡して実行する。新しく見つかった入力は最初に渡した
+ディレクトリに書かれるので、作業用ディレクトリを先に置けばコミット済みのコーパスは変わらない。
+
+```sh
+CC=clang cmake -S tests/fuzz -B build-fuzz
+cmake --build build-fuzz
+mkdir -p build-fuzz/work/t1
+build-fuzz/fuzz_t1 -max_total_time=300 -max_len=4096 build-fuzz/work/t1 tests/fuzz/corpus/t1
+build-fuzz/fuzz_t1 crash-<hash>                         # 見つかった入力の再現
+build-fuzz/fuzz_t1 -minimize_crash=1 -runs=100000 crash-<hash>   # 最小化
+```
+
+シードコーパス `tests/fuzz/corpus/<ハーネス>/` は `fuzz_gen_corpus` が作る。カードスイートと同じコマンド列を
+T=0 / T=1 のリーダーモデル (`tests/reader_t0.c` / `reader_t1.c`) に流し、カードへ送ったバイト列をそのまま記録する
+(T=1 は LRC の生形式と、EDC を外した CRC 用のブロック列の両方)。APDU / ATR / PPS / NVM は表と実際の `nvm_save()` から作る。
+コーパスを作り直すときは `build-fuzz/fuzz_gen_corpus tests/fuzz/corpus` を実行する。
+
+CI の `fuzz` ジョブは各ハーネスをビルドし、コミット済みのコーパスを再生したうえで 20 秒ずつ変異させる。コーパスに
+入っている入力で再び落ちるような退行はここで止まる。落ちたときは入力が `fuzz-artifacts` として保存される。
+
 ## コンソール (USB シリアル、115200 bps 任意)
 
 ATR や APDU のトレースが流れる。ログは専用リングバッファに溜めて空き時間にだけ送るので、
