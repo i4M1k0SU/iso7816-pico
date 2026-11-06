@@ -18,6 +18,13 @@
   PICO_BOARD to build for: pico (default, build directory build/) or another
   board such as pico2 (build directory build-<board>/, e.g. build-pico2/).
 
+.PARAMETER BuildDir
+  Build directory to use instead of build/ or build-<board>/ (a relative path is relative to the repository root).
+
+.PARAMETER CMakeArgs
+  Extra cmake arguments such as -DDEMO_ATR=t1: passed to the first configure and, if the build directory is already
+  configured, to a cmake re-run on it before ninja.
+
 .PARAMETER NoBuild
   Skip cmake/ninja and only flash the existing UF2.
 
@@ -28,9 +35,12 @@
   .\tools\flash.ps1                    # build/ for the Pico, then flash
   .\tools\flash.ps1 -Board pico2       # build-pico2/ for the Pico 2, then flash
   .\tools\flash.ps1 -NoFlash           # build only
+  .\tools\flash.ps1 -BuildDir build-atr-t1 -CMakeArgs '-DDEMO_ATR=t1'   # the demo with its T=1 ATR
 #>
 param(
     [string]$Board = 'pico',
+    [string]$BuildDir,
+    [string[]]$CMakeArgs = @(),
     [switch]$NoBuild,
     [switch]$NoFlash
 )
@@ -41,6 +51,7 @@ if ($NoBuild -and $NoFlash) { throw "-NoBuild and -NoFlash together leave nothin
 $root  = Split-Path -Parent $PSScriptRoot
 $sdk   = Join-Path $env:USERPROFILE '.pico-sdk'
 $build = Join-Path $root $(if ($Board -eq 'pico') { 'build' } else { "build-$Board" })
+if ($BuildDir) { $build = if ([IO.Path]::IsPathRooted($BuildDir)) { $BuildDir } else { Join-Path $root $BuildDir } }
 
 # Sort key for the extension's version directories (2.3.1, 15_2_Rel1, v4.3.4): every number zero-padded.
 function Get-VersionKey([string]$name) {
@@ -82,7 +93,10 @@ Write-Host "SDK $sdkDir, toolchain $toolchainDir, board $Board, build directory 
 
 if (-not $NoBuild) {
     if (-not (Test-Path (Join-Path $build 'build.ninja'))) {
-        cmake -S $root -B $build -G Ninja "-DPICO_BOARD=$Board"
+        cmake -S $root -B $build -G Ninja "-DPICO_BOARD=$Board" @CMakeArgs
+        if ($LASTEXITCODE) { throw "cmake configure failed" }
+    } elseif ($CMakeArgs.Count) {
+        cmake -B $build @CMakeArgs
         if ($LASTEXITCODE) { throw "cmake configure failed" }
     }
     ninja -C $build
