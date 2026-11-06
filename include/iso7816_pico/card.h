@@ -21,9 +21,9 @@
 #pragma once
 
 #include "iso7816_pico/apdu.h"
+#include "iso7816_pico/atr.h"
 #include "iso7816_pico/fs.h"
 #include "iso7816_pico/sec.h"
-#include "iso7816_pico/atr.h"
 
 // ---------------------------------------------------------------------------
 // Applet: an application selectable by AID (ISO 7816-4 SELECT by DF name).
@@ -31,7 +31,7 @@
 typedef struct applet {
     const char *name;
     const uint8_t *aid;
-    uint8_t aid_len;               // 1..16 (ISO 7816-4)
+    uint8_t aid_len; // 1..16 (ISO 7816-4)
 
     // Opaque, for the application: e.g. the instance state when one implementation serves several applets / AIDs.
     // Handlers reach it as cmd->applet->ctx, the life-cycle callbacks as self->ctx.  The framework never touches it.
@@ -78,14 +78,14 @@ typedef struct applet {
 // ---------------------------------------------------------------------------
 typedef struct {
     // --- life cycle ---------------------------------------------------------
-    void (*on_atr)(void);                           // after the ATR went out
-    void (*on_deactivate)(void);                    // RST fell / session ended
+    void (*on_atr)(void);        // after the ATR went out
+    void (*on_deactivate)(void); // RST fell / session ended
 
     // --- file system / access control ---------------------------------------
     // Override the access condition bytes.  op = FS_OP_READ / FS_OP_UPDATE.
     bool (*check_access)(uint8_t channel, const fs_file_t *f, uint8_t op);
     void (*on_select)(uint8_t channel, const fs_file_t *f);
-    void (*on_file_changed)(const fs_file_t *f);    // after UPDATE/WRITE/ERASE/APPEND
+    void (*on_file_changed)(const fs_file_t *f); // after UPDATE/WRITE/ERASE/APPEND
 
     // --- commands -------------------------------------------------------------
     // T=0 only: tell which case an INS not in any table (nor known to the applet's classify) has.
@@ -93,15 +93,15 @@ typedef struct {
     // Last resort for commands nobody handled (return APDU_UNHANDLED for 6D00).
     uint16_t (*unhandled)(const apdu_t *cmd, apdu_resp_t *resp);
 
-    uint16_t (*get_data)(const apdu_t *cmd, apdu_resp_t *resp);               // 00 CA
-    uint16_t (*put_data)(const apdu_t *cmd, apdu_resp_t *resp);               // 00 DA
-    uint16_t (*internal_authenticate)(const apdu_t *cmd, apdu_resp_t *resp);  // 00 88
-    uint16_t (*external_authenticate)(const apdu_t *cmd, apdu_resp_t *resp);  // 00 82
-    uint16_t (*manage_security_environment)(const apdu_t *cmd, apdu_resp_t *resp); // 00 22
-    uint16_t (*perform_security_operation)(const apdu_t *cmd, apdu_resp_t *resp);  // 00 2A
-    uint16_t (*generate_asymmetric_key_pair)(const apdu_t *cmd, apdu_resp_t *resp);// 00 46
-    uint16_t (*create_file)(const apdu_t *cmd, apdu_resp_t *resp);            // 00 E0
-    uint16_t (*delete_file)(const apdu_t *cmd, apdu_resp_t *resp);            // 00 E4
+    uint16_t (*get_data)(const apdu_t *cmd, apdu_resp_t *resp);                     // 00 CA
+    uint16_t (*put_data)(const apdu_t *cmd, apdu_resp_t *resp);                     // 00 DA
+    uint16_t (*internal_authenticate)(const apdu_t *cmd, apdu_resp_t *resp);        // 00 88
+    uint16_t (*external_authenticate)(const apdu_t *cmd, apdu_resp_t *resp);        // 00 82
+    uint16_t (*manage_security_environment)(const apdu_t *cmd, apdu_resp_t *resp);  // 00 22
+    uint16_t (*perform_security_operation)(const apdu_t *cmd, apdu_resp_t *resp);   // 00 2A
+    uint16_t (*generate_asymmetric_key_pair)(const apdu_t *cmd, apdu_resp_t *resp); // 00 46
+    uint16_t (*create_file)(const apdu_t *cmd, apdu_resp_t *resp);                  // 00 E0
+    uint16_t (*delete_file)(const apdu_t *cmd, apdu_resp_t *resp);                  // 00 E4
 
     // --- secure messaging (CLA b4 b3 != 00) -----------------------------------
     // Unwrap: decode the SM data objects in cmd->data, place the plain command data in scratch and point cmd->data / lc
@@ -128,7 +128,7 @@ typedef struct {
     bool (*nvm_migrate)(uint32_t old_layout, const void *old_blob, size_t old_size);
 
     // --- misc -----------------------------------------------------------------
-    void (*random_bytes)(uint8_t *out, size_t n);   // default: hardware RNG
+    void (*random_bytes)(uint8_t *out, size_t n); // default: hardware RNG
 } card_hooks_t;
 
 // ---------------------------------------------------------------------------
@@ -139,8 +139,8 @@ typedef struct {
 // watchdog_update() / log_drain() in long loops (see the `gpio` command for an example).
 // ---------------------------------------------------------------------------
 typedef struct {
-    const char *name;               // matched exactly (case-sensitive); up to 8 characters keep the help aligned
-    const char *help;               // one line for the `help` listing (shown under the card's name)
+    const char *name; // matched exactly (case-sensitive); up to 8 characters keep the help aligned
+    const char *help; // one line for the `help` listing (shown under the card's name)
     void (*handler)(const char *args);
 } console_cmd_t;
 
@@ -155,12 +155,12 @@ typedef struct {
     const char *version;
 
     // --- ISO 7816-3 -----------------------------------------------------------
-    const uint8_t *atr;             // raw ATR to send (e.g. copied from a real card) ...
+    const uint8_t *atr; // raw ATR to send (e.g. copied from a real card) ...
     size_t atr_len;
-    const atr_desc_t *atr_desc;     // ... or a description to build one from (atr == NULL)
-    bool allow_pps;                 // answer PPS requests (ignored in specific mode)
-    bool (*pps_accept)(uint16_t f, uint8_t d, uint8_t t);  // NULL = accept what the PIO can do
-    uint8_t tx_extra_guard;         // extra guard ETUs after our own characters (0..20)
+    const atr_desc_t *atr_desc;                           // ... or a description to build one from (atr == NULL)
+    bool allow_pps;                                       // answer PPS requests (ignored in specific mode)
+    bool (*pps_accept)(uint16_t f, uint8_t d, uint8_t t); // NULL = accept what the PIO can do
+    uint8_t tx_extra_guard;                               // extra guard ETUs after our own characters (0..20)
 
     // --- ISO 7816-4 -----------------------------------------------------------
     const applet_t *const *applets;
@@ -168,23 +168,23 @@ typedef struct {
     const applet_t *default_applet; // implicitly selected (select() runs) after ATR (may be NULL)
     const fs_file_t *files;         // file tree, files[0] = MF (NULL = no file system)
     size_t n_files;
-    sec_pin_t *pins;                // PIN objects (NULL = none)
+    sec_pin_t *pins; // PIN objects (NULL = none)
     size_t n_pins;
-    bool iso_commands;              // serve the interindustry commands of apdu/iso_cmds.c
-    uint8_t max_channels;           // 1..CARD_MAX_CHANNELS logical channels
-    bool proprietary_cla_decode;    // also decode channel / chaining / SM bits of CLA 8X..FX
+    bool iso_commands;           // serve the interindustry commands of apdu/iso_cmds.c
+    uint8_t max_channels;        // 1..CARD_MAX_CHANNELS logical channels
+    bool proprietary_cla_decode; // also decode channel / chaining / SM bits of CLA 8X..FX
 
     card_hooks_t hooks;
 
     // --- persistence -----------------------------------------------------------
-    void *nvm_blob;                 // RAM image saved to flash when marked dirty
+    void *nvm_blob; // RAM image saved to flash when marked dirty
     size_t nvm_size;
     // Layout version of the blob: bump it whenever the struct behind nvm_blob changes, so that the images written by
     // the previous firmware are not reinterpreted (they go to hooks.nvm_migrate, or the defaults are used).
     uint16_t nvm_version;
 
     // --- console ---------------------------------------------------------------
-    const console_cmd_t *console_cmds;   // extra console commands (NULL = none)
+    const console_cmd_t *console_cmds; // extra console commands (NULL = none)
     size_t n_console_cmds;
 } card_profile_t;
 

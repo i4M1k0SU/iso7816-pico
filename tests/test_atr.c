@@ -94,10 +94,11 @@ void test_atr(void) {
     CHECK_EQ(info.d, 4);
 
     // Broken ATRs.
-    static const uint8_t bad_tck[] = { 0x3B, 0x88, 0x81, 0x31, 0xFE, 0x45, 'P', 'i', 'c', 'o', '7', '8', '1', '6',
-                                       0x00 };
+    static const uint8_t bad_tck[] = {
+        0x3B, 0x88, 0x81, 0x31, 0xFE, 0x45, 'P', 'i', 'c', 'o', '7', '8', '1', '6', 0x00
+    };
     CHECK(!atr_parse(bad_tck, sizeof bad_tck, &info));
-    CHECK(!atr_parse(bad_tck, 6, &info));           // truncated
+    CHECK(!atr_parse(bad_tck, 6, &info)); // truncated
     CHECK(!atr_parse(bad_tck, 1, &info));
     d = base();
     d.levels = 0;
@@ -106,7 +107,7 @@ void test_atr(void) {
     d.historical_len = 16;
     CHECK_EQ(atr_build(&d, out, sizeof out), 0);
     d = base();
-    CHECK_EQ(atr_build(&d, out, 4), 0);              // buffer too small
+    CHECK_EQ(atr_build(&d, out, 4), 0); // buffer too small
 
     // Fi / Di tables.
     CHECK_EQ(atr_fi(0x1), 372);

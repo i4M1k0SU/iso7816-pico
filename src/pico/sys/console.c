@@ -1,12 +1,12 @@
 #include "console.h"
 
-#include "iso7816_pico/apdu.h"
 #include "apdu/dispatch.h"
-#include "iso7816_pico/fs.h"
-#include "iso7816_pico/card.h"
-#include "iso7816_pico/config.h"
 #include "hal/nvm.h"
 #include "hal/phy.h"
+#include "iso7816_pico/apdu.h"
+#include "iso7816_pico/card.h"
+#include "iso7816_pico/config.h"
+#include "iso7816_pico/fs.h"
 #include "iso7816_pico/log.h"
 #include "proto/session.h"
 
@@ -28,7 +28,7 @@
 // ---------------------------------------------------------------------------
 
 static char s_ring[LOG_RING_SIZE];
-static size_t s_head, s_tail;   // head = write, tail = read
+static size_t s_head, s_tail; // head = write, tail = read
 static bool s_overflow;
 
 static size_t ring_used(void) { return (s_head - s_tail + LOG_RING_SIZE) % LOG_RING_SIZE; }
@@ -92,8 +92,8 @@ static void sb_hex(strbuf_t *sb, const uint8_t *src, size_t n, size_t show_max) 
     if (show < n) sb_printf(sb, " ..(%u bytes)", (unsigned)n);
 }
 
-void log_apdu(const char *name, uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2,
-              const uint8_t *in, size_t in_len, const uint8_t *out, size_t out_len, uint16_t sw) {
+void log_apdu(const char *name, uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2, const uint8_t *in, size_t in_len,
+              const uint8_t *out, size_t out_len, uint16_t sw) {
     char buf[200];
     strbuf_t sb = { buf, sizeof buf, 0 };
     buf[0] = 0;
@@ -141,13 +141,12 @@ static void print_status(void) {
     const phy_stats_t *st = phy_stats();
     const phy_params_t *pp = phy_params();
     log_printf("state      : %s (RST=%d)", phy_in_reset() ? "reset" : "active", phy_rst_high());
-    log_printf("CLK        : %lu Hz, F/D %u/%u, ETU = %lu us, T=%u", (unsigned long)st->clk_hz,
-               pp->f, pp->d, (unsigned long)phy_etu_us(), session_protocol());
+    log_printf("CLK        : %lu Hz, F/D %u/%u, ETU = %lu us, T=%u", (unsigned long)st->clk_hz, pp->f, pp->d,
+               (unsigned long)phy_etu_us(), session_protocol());
     log_printf("sysclk     : %lu Hz (PIO needs >= %u x CLK)", (unsigned long)st->sys_clk_hz,
                (unsigned)PHY_MIN_SYSCLK_PER_CLK);
-    log_printf("RST edges  : %lu rising, %lu falling; ATR attempts %lu",
-               (unsigned long)st->rst_rises, (unsigned long)st->rst_falls,
-               (unsigned long)st->atr_attempts);
+    log_printf("RST edges  : %lu rising, %lu falling; ATR attempts %lu", (unsigned long)st->rst_rises,
+               (unsigned long)st->rst_falls, (unsigned long)st->atr_attempts);
     phy_pins_t pins;
     phy_sample_pins(&pins);
     log_printf("pins now   : RST=%d CLK=%d (%lu toggles/2ms) IO=%d", pins.rst, pins.clk,
@@ -155,17 +154,16 @@ static void print_status(void) {
     log_printf("sessions   : %lu", (unsigned long)st->sessions);
     log_printf("rx/tx chars: %lu / %lu", (unsigned long)st->rx_chars, (unsigned long)st->tx_chars);
     log_printf("errors     : rx parity %lu, rx overrun %lu, tx echo %lu, tx timeout %lu",
-               (unsigned long)st->rx_parity_errors, (unsigned long)st->rx_overruns,
-               (unsigned long)st->tx_echo_errors, (unsigned long)st->tx_timeouts);
+               (unsigned long)st->rx_parity_errors, (unsigned long)st->rx_overruns, (unsigned long)st->tx_echo_errors,
+               (unsigned long)st->tx_timeouts);
     log_printf("repetition : %lu characters repeated after the reader's error signal", (unsigned long)st->tx_repeats);
     log_printf("rx latency : max %lu us, %lu characters picked up too late for an error signal",
                (unsigned long)st->rx_max_latency_us, (unsigned long)st->rx_late);
     log_printf("last ATR   : %s", st->last_error ? st->last_error : "ok");
-    log_printf("  first ATR echo %lu us after start; CLK by PIO counter %lu Hz",
-               (unsigned long)st->dbg_delay_us, (unsigned long)st->dbg_clk_counted_hz);
-    log_printf("  first echo mismatch at byte %lu: expected %02lX got 0x%03lX",
-               (unsigned long)st->dbg_echo_index, (unsigned long)st->dbg_echo_expected,
-               (unsigned long)st->dbg_echo_got);
+    log_printf("  first ATR echo %lu us after start; CLK by PIO counter %lu Hz", (unsigned long)st->dbg_delay_us,
+               (unsigned long)st->dbg_clk_counted_hz);
+    log_printf("  first echo mismatch at byte %lu: expected %02lX got 0x%03lX", (unsigned long)st->dbg_echo_index,
+               (unsigned long)st->dbg_echo_expected, (unsigned long)st->dbg_echo_got);
 }
 
 #ifndef PICO_PROGRAM_NAME
@@ -207,8 +205,8 @@ static void print_card(void) {
     for (size_t i = 0; i < card_profile->n_files; i++) {
         const fs_file_t *f = &card_profile->files[i];
         log_printf("  %04X type %02X parent %04X size %lu rec %u sfi %u ac %02X/%02X", f->fid, f->type,
-                   f->parent ? f->parent->fid : 0, (unsigned long)f->size, f->rec_size, f->sfi,
-                   f->ac_read, f->ac_update);
+                   f->parent ? f->parent->fid : 0, (unsigned long)f->size, f->rec_size, f->sfi, f->ac_read,
+                   f->ac_update);
     }
     log_printf("PINs       : %u", (unsigned)card_profile->n_pins);
     for (size_t i = 0; i < card_profile->n_pins; i++) {
@@ -216,8 +214,7 @@ static void print_card(void) {
         log_printf("  ref %02X len %u retries %u/%u%s", p->ref, p->len, p->retries, p->max_retries,
                    p->disabled ? " (disabled)" : "");
     }
-    log_printf("NVM        : %u bytes%s", (unsigned)card_profile->nvm_size,
-               card_profile->nvm_blob ? "" : " (none)");
+    log_printf("NVM        : %u bytes%s", (unsigned)card_profile->nvm_size, card_profile->nvm_blob ? "" : " (none)");
 }
 
 static void cmd_help(const char *args);
@@ -246,7 +243,8 @@ static void cmd_trace(const char *args) {
     size_t n;
     const phy_trace_t *tr = phy_trace(&n);
     log_printf("trace of the last session (first %u events; us since its start, T / P = sent / with bad parity, "
-               "R = received, E / e = reader's error signal start / end in 1/10 ETU):", (unsigned)n);
+               "R = received, E / e = reader's error signal start / end in 1/10 ETU):",
+               (unsigned)n);
     for (size_t i = 0; i < n; i += 4) {
         char line[4 * 16 + 1];
         strbuf_t sb = { line, sizeof line, 0 };
@@ -269,8 +267,7 @@ static void cmd_txperr(const char *args) {
         return;
     }
     phy_debug_bad_parity((uint32_t)index, (uint32_t)count);
-    log_printf("character %lu of this or the next session goes out with a wrong parity bit %lu time(s)", index,
-               count);
+    log_printf("character %lu of this or the next session goes out with a wrong parity bit %lu time(s)", index, count);
 }
 
 // Wiring check: watch every GPIO for 15 s and report which ones moved, with the order of their first edges (ISO 7816-3
@@ -287,7 +284,9 @@ static void cmd_gpio(const char *args) {
     uint32_t last = first;
     int64_t first_rise[30], first_fall[30];
     int64_t first_change = -1;
-    for (int g = 0; g < 30; g++) { first_rise[g] = first_fall[g] = -1; }
+    for (int g = 0; g < 30; g++) {
+        first_rise[g] = first_fall[g] = -1;
+    }
     while (!time_reached(end)) {
         uint32_t now = gpio_get_all();
         uint32_t diff = now ^ last;
@@ -296,8 +295,11 @@ static void cmd_gpio(const char *args) {
             if (first_change < 0) first_change = t;
             for (int g = 0; g < 30; g++) {
                 if (!(diff & (1u << g))) continue;
-                if ((now >> g) & 1) { if (first_rise[g] < 0) first_rise[g] = t; }
-                else                { if (first_fall[g] < 0) first_fall[g] = t; }
+                if ((now >> g) & 1) {
+                    if (first_rise[g] < 0) first_rise[g] = t;
+                } else {
+                    if (first_fall[g] < 0) first_fall[g] = t;
+                }
             }
         }
         changed |= diff;
@@ -343,11 +345,16 @@ static size_t parse_hex(const char *s, uint8_t *out, size_t cap) {
     int hi = -1;
     for (; *s; s++) {
         int v;
-        if (*s >= '0' && *s <= '9') v = *s - '0';
-        else if (*s >= 'a' && *s <= 'f') v = *s - 'a' + 10;
-        else if (*s >= 'A' && *s <= 'F') v = *s - 'A' + 10;
-        else if (*s == ' ' || *s == ':') continue;
-        else return 0;
+        if (*s >= '0' && *s <= '9')
+            v = *s - '0';
+        else if (*s >= 'a' && *s <= 'f')
+            v = *s - 'a' + 10;
+        else if (*s >= 'A' && *s <= 'F')
+            v = *s - 'A' + 10;
+        else if (*s == ' ' || *s == ':')
+            continue;
+        else
+            return 0;
         if (hi < 0) {
             hi = v;
         } else {
@@ -431,18 +438,18 @@ static void cmd_reboot(const char *args) {
 }
 
 static const console_cmd_t s_builtin[] = {
-    { "help",    "list the commands",                                          cmd_help    },
-    { "status",  "statistics (clock, sessions, errors, last ATR)",            cmd_status  },
-    { "card",    "card profile (ATR, applets, files, PINs, NVM)",             cmd_card    },
-    { "trace",   "TX/RX trace of the last session (first events)",            cmd_trace   },
-    { "txperr",  "<index> [count]  send character <index> (TS = 0) with bad parity", cmd_txperr },
-    { "gpio",    "watch all GPIOs for 15 s (find the contacts; no session)",  cmd_gpio    },
-    { "pins",    "watch RST/CLK/IO for 5 s (no session)",                     cmd_pins    },
-    { "apdu",    "<hex>  run a command APDU through the dispatcher (no session)", cmd_apdu },
-    { "save",    "write the NVM now (no session)",                            cmd_save    },
-    { "erase",   "erase the NVM (factory defaults) and reboot (no session)",  cmd_erase   },
-    { "bootsel", "reboot into BOOTSEL (UF2 drive)",                           cmd_bootsel },
-    { "reboot",  "reboot (run the firmware again)",                           cmd_reboot  },
+    { "help", "list the commands", cmd_help },
+    { "status", "statistics (clock, sessions, errors, last ATR)", cmd_status },
+    { "card", "card profile (ATR, applets, files, PINs, NVM)", cmd_card },
+    { "trace", "TX/RX trace of the last session (first events)", cmd_trace },
+    { "txperr", "<index> [count]  send character <index> (TS = 0) with bad parity", cmd_txperr },
+    { "gpio", "watch all GPIOs for 15 s (find the contacts; no session)", cmd_gpio },
+    { "pins", "watch RST/CLK/IO for 5 s (no session)", cmd_pins },
+    { "apdu", "<hex>  run a command APDU through the dispatcher (no session)", cmd_apdu },
+    { "save", "write the NVM now (no session)", cmd_save },
+    { "erase", "erase the NVM (factory defaults) and reboot (no session)", cmd_erase },
+    { "bootsel", "reboot into BOOTSEL (UF2 drive)", cmd_bootsel },
+    { "reboot", "reboot (run the firmware again)", cmd_reboot },
 };
 
 // Two groups: the built-in commands, then the card profile's under the card's own name, so that a user of a finished
@@ -518,9 +525,9 @@ void console_poll(void) {
     }
     was_connected = connected;
 
-    static int prev;   // previous input byte: the LF of a CR LF pair is not a second Enter
+    static int prev; // previous input byte: the LF of a CR LF pair is not a second Enter
     for (;;) {
-        char in;   // USB only, like the output: input from other stdio drivers belongs to the application
+        char in; // USB only, like the output: input from other stdio drivers belongs to the application
         if (stdio_usb.in_chars(&in, 1) != 1) return;
         int c = (unsigned char)in;
         int last = prev;
@@ -528,7 +535,7 @@ void console_poll(void) {
         if (c == '\r' || c == '\n') {
             if (c == '\n' && last == '\r') continue;
             echo("\r\n", 2);
-            if (s_line_len == 0) {                    // Enter alone: show the commands
+            if (s_line_len == 0) { // Enter alone: show the commands
                 cmd_help(NULL);
                 continue;
             }

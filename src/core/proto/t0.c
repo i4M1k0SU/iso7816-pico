@@ -1,8 +1,8 @@
 #include "t0.h"
 
-#include "iso7816_pico/apdu.h"
 #include "apdu/dispatch.h"
 #include "hal/phy.h"
+#include "iso7816_pico/apdu.h"
 #include "iso7816_pico/log.h"
 
 #include <string.h>
@@ -10,8 +10,8 @@
 // Response data waiting for GET RESPONSE (after 61 xx) or for the re-issued command after 6C xx.
 static const uint8_t *s_pending;
 static uint32_t s_pending_len, s_pending_off;
-static uint16_t s_pending_sw;        // SW to send with the last chunk
-static uint8_t s_pending_hdr[4];     // header that produced a 6C xx answer
+static uint16_t s_pending_sw;    // SW to send with the last chunk
+static uint8_t s_pending_hdr[4]; // header that produced a 6C xx answer
 static bool s_pending_6c;
 
 // ENVELOPE reassembly (extended-length APDU over T=0).
@@ -29,7 +29,7 @@ void t0_session_begin(void) {
     s_wi = T0_DEFAULT_WI;
 }
 
-void t0_set_wi(uint8_t wi) { s_wi = wi ? wi : T0_DEFAULT_WI; }   // TC2 = 00 is reserved
+void t0_set_wi(uint8_t wi) { s_wi = wi ? wi : T0_DEFAULT_WI; } // TC2 = 00 is reserved
 
 // WWT = 960 x D x WI ETU (ISO 7816-3:2006 10.2), recomputed per use because a PPS may have changed D.  The ETU is
 // rounded up so that the card never gives up before the reader would.
@@ -62,9 +62,7 @@ static int rx_bytes(uint8_t *buf, size_t n) {
     return 1;
 }
 
-static uint16_t sw_more_data(uint32_t remaining) {
-    return SW_BYTES_REMAINING(remaining >= 256 ? 0 : remaining);
-}
+static uint16_t sw_more_data(uint32_t remaining) { return SW_BYTES_REMAINING(remaining >= 256 ? 0 : remaining); }
 
 // Data may only accompany a success or warning status.
 static bool sw_allows_data(uint16_t sw) {
@@ -96,8 +94,7 @@ static bool handle_get_response(const uint8_t hdr[5]) {
 }
 
 // Answer a command whose response data is in *resp.
-static bool send_response(const uint8_t hdr[5], apdu_case_t kind, uint32_t le,
-                          const apdu_resp_t *resp, uint16_t sw) {
+static bool send_response(const uint8_t hdr[5], apdu_case_t kind, uint32_t le, const apdu_resp_t *resp, uint16_t sw) {
     // No data, also for a case 2 command whose handler produced none (ISO 7816-4: Ne is a maximum, Nr = 0 <= Ne is a
     // valid response): SW1 SW2 straight away instead of the ACK, which ISO 7816-3:2006 10.3.3 allows.  This is not
     // "wrong Le": 6C xx announces an La > 0 (6C 00 would mean La = 256), so the case 2 mapping (7816-3 12.2.3) ends
@@ -125,8 +122,8 @@ static bool run_command(const uint8_t hdr[5], apdu_t *cmd, apdu_case_t kind) {
     apdu_resp_t resp = APDU_RESP_INIT(dispatch_resp_buf(), APDU_BUF_SIZE);
     uint16_t sw = dispatch_process(cmd, &resp);
     bool ok = send_response(hdr, kind, cmd->le, &resp, sw);
-    log_apdu(dispatch_name(cmd->cla, cmd->ins), cmd->cla, cmd->ins, cmd->p1, cmd->p2, cmd->data,
-             cmd->lc, resp.len ? resp.data : NULL, resp.len, sw);
+    log_apdu(dispatch_name(cmd->cla, cmd->ins), cmd->cla, cmd->ins, cmd->p1, cmd->p2, cmd->data, cmd->lc,
+             resp.len ? resp.data : NULL, resp.len, sw);
     return ok;
 }
 
@@ -142,7 +139,7 @@ static bool handle_envelope(const uint8_t hdr[5]) {
         if (!send_ack(hdr[1])) return false;
         int r = rx_bytes(&buf[s_env_len], lc);
         if (r <= 0) {
-            s_env_len = 0;              // the chain is broken either way
+            s_env_len = 0; // the chain is broken either way
             if (r < 0) return false;
             log_printf("T=0: ENVELOPE data stopped short (%lu bytes expected), dropped", (unsigned long)lc);
             return true;
@@ -166,8 +163,10 @@ static bool handle_envelope(const uint8_t hdr[5]) {
 
 bool t0_handle_command(int first_byte) {
     uint8_t hdr[5];
-    if (first_byte >= 0) hdr[0] = (uint8_t)first_byte;
-    else if (!phy_rx(&hdr[0], true)) return false;
+    if (first_byte >= 0)
+        hdr[0] = (uint8_t)first_byte;
+    else if (!phy_rx(&hdr[0], true))
+        return false;
     // The rest of the header follows back to back.  A lone character (noise, a stray echo) would otherwise become CLA
     // and shift every later header by one byte; drop it and wait for a new header.
     int r = rx_bytes(&hdr[1], 4);
@@ -178,7 +177,7 @@ bool t0_handle_command(int first_byte) {
     }
 
     uint8_t cla = hdr[0], ins = hdr[1];
-    if (cla == 0xFF) return send_sw(SW_CLA_NOT_SUPPORTED);   // PPS after the first command
+    if (cla == 0xFF) return send_sw(SW_CLA_NOT_SUPPORTED); // PPS after the first command
 
     if (ins == 0xC0) {
         bool ok = handle_get_response(hdr);
@@ -192,7 +191,7 @@ bool t0_handle_command(int first_byte) {
         if (le == s_pending_len) return send_pending_chunk(ins, le);
     }
     s_pending_6c = false;
-    s_pending = NULL;                         // any other command discards leftovers
+    s_pending = NULL; // any other command discards leftovers
     s_pending_len = s_pending_off = 0;
 
     if (ins == 0xC2) return handle_envelope(hdr);
@@ -200,8 +199,15 @@ bool t0_handle_command(int first_byte) {
 
     apdu_case_t kind = dispatch_classify(cla, ins, hdr[2], hdr[3]);
     apdu_t cmd = {
-        .cla = cla, .ins = ins, .p1 = hdr[2], .p2 = hdr[3],
-        .data = NULL, .lc = 0, .le = 0, .le_present = false, .extended = false,
+        .cla = cla,
+        .ins = ins,
+        .p1 = hdr[2],
+        .p2 = hdr[3],
+        .data = NULL,
+        .lc = 0,
+        .le = 0,
+        .le_present = false,
+        .extended = false,
     };
     uint8_t *data_in = dispatch_cmd_buf();
 
@@ -230,7 +236,7 @@ bool t0_handle_command(int first_byte) {
             cmd.le_present = true;
         }
         break;
-    default:   // case 1 / unknown: P3 is ignored, nothing in, nothing out
+    default: // case 1 / unknown: P3 is ignored, nothing in, nothing out
         break;
     }
     return run_command(hdr, &cmd, kind);

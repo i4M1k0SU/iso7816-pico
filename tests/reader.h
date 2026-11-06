@@ -25,7 +25,7 @@ bool t0r_tpdu(const uint8_t *apdu, size_t len, reader_result_t *out);
 // APDU exchange following 61 xx / 6C xx like a PC/SC layer.
 bool t0r_apdu(const uint8_t *apdu, size_t len, reader_result_t *out);
 
-uint32_t t0r_null_bytes(void);   // NULL procedure bytes (60) seen
+uint32_t t0r_null_bytes(void); // NULL procedure bytes (60) seen
 
 // ---- T=1 ------------------------------------------------------------------------------------------------------------
 
@@ -36,10 +36,10 @@ void t1r_begin(uint8_t ifsc);
 // available through t1r_last_block().
 bool t1r_exchange(const uint8_t *block, size_t len);
 const uint8_t *t1r_last_block(size_t *len);
-uint32_t t1r_block_count(void);         // blocks received from the card so far
-uint32_t t1r_wtx_requests(void);        // S(WTX request) blocks answered automatically
-void t1r_set_ifsd(uint8_t ifsd);         // our limit for card -> reader I-blocks (send S(IFS) first)
-void t1r_resynch(void);                  // S(RESYNCH request); the model's N(S) restarts at 0 as well
+uint32_t t1r_block_count(void);  // blocks received from the card so far
+uint32_t t1r_wtx_requests(void); // S(WTX request) blocks answered automatically
+void t1r_set_ifsd(uint8_t ifsd); // our limit for card -> reader I-blocks (send S(IFS) first)
+void t1r_resynch(void);          // S(RESYNCH request); the model's N(S) restarts at 0 as well
 
 // Full APDU exchange with chaining in both directions.
 bool t1r_apdu(const uint8_t *apdu, size_t len, reader_result_t *out);

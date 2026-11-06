@@ -46,19 +46,19 @@ static void test_t1_errors(void) {
     t1r_begin(254);
     CHECK(xchg("00 00 05 00 11 00 00 00"));
     check_last("00 00 02 6D 00 6F");
-    fake_phy_push_hex("00 80 00 00");            // R(0) with a bad LRC
+    fake_phy_push_hex("00 80 00 00"); // R(0) with a bad LRC
     CHECK(t1_handle_block(-1));
     check_last("00 91 00 91");
     CHECK(r_block(0));
     check_last("00 00 02 6D 00 6F");
-    CHECK(r_block(0));                           // as often as asked
+    CHECK(r_block(0)); // as often as asked
     check_last("00 00 02 6D 00 6F");
-    fake_phy_push_hex("00 80 FF");               // invalid LEN, then a timeout: "other error"
+    fake_phy_push_hex("00 80 FF"); // invalid LEN, then a timeout: "other error"
     CHECK(t1_handle_block(-1));
     check_last("00 92 00 92");
     CHECK(r_block(0));
     check_last("00 00 02 6D 00 6F");
-    CHECK(xchg("00 40 05 00 11 00 00 00"));      // the next command acknowledges I(0)
+    CHECK(xchg("00 40 05 00 11 00 00 00")); // the next command acknowledges I(0)
     check_last("00 40 02 6D 00 2F");
 
     // Retransmission requests during a chained response: each chunk is repeated on R(N(S) of that chunk), the next one
@@ -66,7 +66,7 @@ static void test_t1_errors(void) {
     t1r_begin(254);
     t1r_set_ifsd(0x20);
     check_last("00 E1 01 20 C0");
-    CHECK(xchg("00 00 05 00 B0 81 00 00"));      // READ BINARY 256 bytes -> 258 bytes in 9 I-blocks
+    CHECK(xchg("00 00 05 00 B0 81 00 00")); // READ BINARY 256 bytes -> 258 bytes in 9 I-blocks
     uint32_t chunks = 1, payload = 0;
     for (int hop = 0; hop < 20; hop++) {
         copy_last(saved, &saved_len);
@@ -74,7 +74,7 @@ static void test_t1_errors(void) {
         uint8_t ns = (saved[1] >> 6) & 1;
         CHECK_EQ(ns, (chunks - 1) & 1);
         payload += saved[2];
-        fake_phy_push_hex("00 90 00 00");        // a corrupted block in between changes nothing
+        fake_phy_push_hex("00 90 00 00"); // a corrupted block in between changes nothing
         CHECK(t1_handle_block(-1));
         b = t1r_last_block(&n);
         CHECK(n == 4 && (b[1] & 0xC0) == 0x80);
@@ -95,12 +95,12 @@ static void test_t1_errors(void) {
     CHECK(xchg("21 00 05 00 11 00 00 00"));
     check_last("12 00 02 6D 00 7D");
     t1r_begin(254);
-    fake_phy_push_hex("21 00 05 00 11 00 00 00 00");   // bad LRC
+    fake_phy_push_hex("21 00 05 00 11 00 00 00 00"); // bad LRC
     CHECK(t1_handle_block(-1));
     check_last("00 81 00 81");
     CHECK(r_block(1));
     check_last("00 82 00 82");
-    CHECK(xchg("00 40 05 00 11 00 00 00"));      // I(1) where I(0) is expected
+    CHECK(xchg("00 40 05 00 11 00 00 00")); // I(1) where I(0) is expected
     check_last("00 82 00 82");
     CHECK(xchg("00 00 05 00 11 00 00 00"));
     check_last("00 00 02 6D 00 6F");
@@ -118,7 +118,7 @@ static void test_t1_errors(void) {
     t1r_set_ifsd(0x08);
     check_last("00 E1 01 08 E8");
     uint32_t blocks = t1r_block_count();
-    CHECK(apdu("00 B0 81 00 10", &r));           // 16 bytes + SW in 8 + 8 + 2
+    CHECK(apdu("00 B0 81 00 10", &r)); // 16 bytes + SW in 8 + 8 + 2
     CHECK_EQ(r.sw, 0x9000);
     CHECK_EQ(r.len, 16);
     CHECK_EQ(t1r_block_count() - blocks, 3);
@@ -134,18 +134,18 @@ static void test_t1_errors(void) {
     CHECK(apdu("00 B0 81 00 00", &r));
     CHECK_EQ(r.sw, 0x9000);
     CHECK_EQ(r.len, 256);
-    CHECK_EQ(t1r_block_count() - blocks, 9);     // 258 bytes / 32
+    CHECK_EQ(t1r_block_count() - blocks, 9); // 258 bytes / 32
 
     // The reader's chain: a repeated I-block (it missed our R-block) and an R-block (it got a corrupted one) both get
     // the acknowledgement again, and the data is not appended twice.
     t1r_begin(254);
-    CHECK(xchg("00 20 02 00 B0"));               // I(0, M): first half of READ BINARY 4 bytes
+    CHECK(xchg("00 20 02 00 B0")); // I(0, M): first half of READ BINARY 4 bytes
     check_last("00 90 00 90");
     CHECK(xchg("00 20 02 00 B0"));
     check_last("00 90 00 90");
     CHECK(r_block(0));
     check_last("00 90 00 90");
-    fake_phy_push_hex("00 40 03 81 00 04 00");   // bad LRC
+    fake_phy_push_hex("00 40 03 81 00 04 00"); // bad LRC
     CHECK(t1_handle_block(-1));
     check_last("00 91 00 91");
     CHECK(xchg("00 40 03 81 00 04"));
@@ -156,7 +156,7 @@ static void test_t1_errors(void) {
     // rest of the block (up to 256 characters) is neither collided with nor parsed as further blocks.
     t1r_begin(254);
     fake_phy_push_hex("00 00 FF");
-    for (int i = 0; i < 64; i++) fake_phy_push_hex("00 00 00 00");  // would each be a valid I-block
+    for (int i = 0; i < 64; i++) fake_phy_push_hex("00 00 00 00"); // would each be a valid I-block
     blocks = t1r_block_count();
     CHECK(t1_handle_block(-1));
     CHECK_EQ(t1r_block_count() - blocks, 1);
@@ -237,7 +237,7 @@ void test_t1(void) {
     CHECK(apdu("00 B0 81 00 00", &r));
     CHECK_EQ(r.sw, 0x9000);
     CHECK_EQ(r.len, 256);
-    CHECK_EQ(t1r_block_count() - blocks, 9);     // 258 bytes / 32
+    CHECK_EQ(t1r_block_count() - blocks, 9); // 258 bytes / 32
     t1r_set_ifsd(0xFE);
 
     // S(WTX request) from the slow handler, answered by the reader model.
@@ -264,7 +264,7 @@ void test_t1(void) {
     static uint8_t huge[7 + APDU_BUF_SIZE + 100];
     memcpy(huge, "\x80\x20\x00\x00\x00\x10\x64", 7);
     blocks = t1r_block_count();
-    CHECK(t1r_apdu(huge, sizeof huge, &r));      // the model checks each R(N(R)) acknowledgement
+    CHECK(t1r_apdu(huge, sizeof huge, &r)); // the model checks each R(N(R)) acknowledgement
     CHECK_EQ(r.sw, 0x6700);
     CHECK_EQ(r.len, 0);
     CHECK_EQ(t1r_block_count() - blocks, (sizeof huge + 253) / 254);

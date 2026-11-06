@@ -34,37 +34,37 @@ typedef struct {
 #define PHY_MIN_SYSCLK_PER_CLK 8
 
 typedef struct {
-    uint32_t sessions;         // ATRs sent
+    uint32_t sessions; // ATRs sent
     uint32_t rx_chars;
     uint32_t tx_chars;
     uint32_t rx_parity_errors; // bad parity from reader -> error signal sent
     uint32_t tx_echo_errors;   // our own character read back differently
     uint32_t tx_timeouts;
-    uint32_t rx_overruns;      // receiver stalled on a full FIFO: characters from the reader may have been lost
-    uint32_t rx_late;          // characters picked up too late for an error signal (one is skipped if parity was bad)
-    uint32_t rx_max_latency_us; // longest time a character may have waited in the RX FIFO (upper bound)
-    uint32_t tx_repeats;       // characters repeated because the reader sent the error signal (T=0)
-    uint32_t clk_hz;           // measured during the last ATR
-    uint32_t sys_clk_hz;       // clock the PIO runs at (0 when unknown, e.g. in the host tests)
+    uint32_t rx_overruns;        // receiver stalled on a full FIFO: characters from the reader may have been lost
+    uint32_t rx_late;            // characters picked up too late for an error signal (one is skipped if parity was bad)
+    uint32_t rx_max_latency_us;  // longest time a character may have waited in the RX FIFO (upper bound)
+    uint32_t tx_repeats;         // characters repeated because the reader sent the error signal (T=0)
+    uint32_t clk_hz;             // measured during the last ATR
+    uint32_t sys_clk_hz;         // clock the PIO runs at (0 when unknown, e.g. in the host tests)
     volatile uint32_t rst_rises; // RST rising edges seen (written by the RST interrupt)
     volatile uint32_t rst_falls; // RST falling edges seen (written by the RST interrupt)
-    uint32_t atr_attempts;     // phy_start_session() calls
-    const char *last_error;    // why the last session start / transfer failed
+    uint32_t atr_attempts;       // phy_start_session() calls
+    const char *last_error;      // why the last session start / transfer failed
     // Diagnostics for the last ATR attempt
-    uint32_t dbg_delay_us;     // time from ATR start to the first echoed character
-    uint32_t dbg_echo_index;   // index of first echo mismatch (or count if none)
+    uint32_t dbg_delay_us;   // time from ATR start to the first echoed character
+    uint32_t dbg_echo_index; // index of first echo mismatch (or count if none)
     uint32_t dbg_echo_expected;
-    uint32_t dbg_echo_got;     // raw 9-bit word
+    uint32_t dbg_echo_got;       // raw 9-bit word
     uint32_t dbg_clk_counted_hz; // CLK frequency counted by the PIO clock counter at RST rise
 } phy_stats_t;
 
 // Timestamped trace of the last session start (TX pushes and RX words).
 typedef struct {
-    uint32_t t_us;     // relative to session start
-    uint8_t kind;      // 'T' = frame pushed (value = byte), 'P' = same with a deliberately wrong parity bit,
-                       // 'R' = word received (9 bits, line states), 'E' = reader's error signal after our character
-                       // (value = its start in 1/10 ETU after our leading edge, 0 = not seen by the CPU's polling),
-                       // 'e' = end of that error signal (1/10 ETU after our leading edge)
+    uint32_t t_us; // relative to session start
+    uint8_t kind;  // 'T' = frame pushed (value = byte), 'P' = same with a deliberately wrong parity bit,
+                   // 'R' = word received (9 bits, line states), 'E' = reader's error signal after our character
+                   // (value = its start in 1/10 ETU after our leading edge, 0 = not seen by the CPU's polling),
+                   // 'e' = end of that error signal (1/10 ETU after our leading edge)
     uint16_t value;
 } phy_trace_t;
 
@@ -81,7 +81,7 @@ typedef struct {
     bool rst;
     bool io;
     bool clk;
-    uint32_t clk_toggles;      // CLK level changes seen in a short sampling window
+    uint32_t clk_toggles; // CLK level changes seen in a short sampling window
 } phy_pins_t;
 
 void phy_sample_pins(phy_pins_t *p);

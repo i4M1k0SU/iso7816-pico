@@ -126,8 +126,9 @@ void card_runtime_init(const card_profile_t *profile) {
     if (!region_ok) {
         // The port refuses every erase / program then, so the program can never erase its own code.
         log_printf("NVM: program ends at 0x%08lx, past the NVM region at 0x%08lx (PICO_FLASH_SIZE_BYTES %lu, "
-                   "NVM_FLASH_BYTES %lu): flash left alone, NOT persisted", (unsigned long)program_end,
-                   (unsigned long)nvm_start, (unsigned long)PICO_FLASH_SIZE_BYTES, (unsigned long)NVM_FLASH_BYTES);
+                   "NVM_FLASH_BYTES %lu): flash left alone, NOT persisted",
+                   (unsigned long)program_end, (unsigned long)nvm_start, (unsigned long)PICO_FLASH_SIZE_BYTES,
+                   (unsigned long)NVM_FLASH_BYTES);
     } else if (profile->nvm_blob && profile->nvm_size && !nvm_fits(profile->nvm_size)) {
         log_printf("NVM: %u-byte blob needs 2 slots of %lu bytes, NVM_FLASH_BYTES is %lu: NOT persisted",
                    (unsigned)profile->nvm_size, (unsigned long)NVM_SLOT_BYTES(profile->nvm_size),
@@ -136,9 +137,8 @@ void card_runtime_init(const card_profile_t *profile) {
         bool loaded = nvm_load(profile->nvm_blob, profile->nvm_size);
         const nvm_status_t *st = nvm_status();
         log_printf("NVM: %s (%u bytes, slot %lu/%lu, seq %lu)",
-                   loaded ? (st->migrated ? "migrated" : "loaded from flash") : "defaults",
-                   (unsigned)profile->nvm_size, (unsigned long)st->slot, (unsigned long)st->slots,
-                   (unsigned long)st->seq);
+                   loaded ? (st->migrated ? "migrated" : "loaded from flash") : "defaults", (unsigned)profile->nvm_size,
+                   (unsigned long)st->slot, (unsigned long)st->slots, (unsigned long)st->seq);
     }
     fs_init(profile->files, profile->n_files);
     sec_init(profile->pins, profile->n_pins);
@@ -162,7 +162,7 @@ void card_runtime_run(void) {
 
         if (!phy_rst_high()) {
             need_fresh_reset = false;
-            save_dirty_nvm(NULL);   // fallback for changes the idle save did not get to
+            save_dirty_nvm(NULL); // fallback for changes the idle save did not get to
             continue;
         }
         if (need_fresh_reset && !phy_reset_pending()) continue;

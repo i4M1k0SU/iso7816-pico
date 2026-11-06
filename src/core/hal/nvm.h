@@ -33,16 +33,16 @@
 uint32_t nvm_layout_id(void);
 
 typedef enum {
-    NVM_SAVE_FAILED,      // flash error or the blob does not fit in one slot
-    NVM_SAVE_WRITTEN,     // a new slot was written
-    NVM_SAVE_UNCHANGED,   // the stored image already matches, nothing written
+    NVM_SAVE_FAILED,    // flash error or the blob does not fit in one slot
+    NVM_SAVE_WRITTEN,   // a new slot was written
+    NVM_SAVE_UNCHANGED, // the stored image already matches, nothing written
 } nvm_save_result_t;
 
 typedef struct {
-    bool valid;           // a stored image was found (by nvm_load or nvm_save)
-    uint32_t slot;        // slot holding the current image
-    uint32_t seq;         // its sequence number
-    uint32_t slots;       // number of slots the region offers for this blob size
+    bool valid;     // a stored image was found (by nvm_load or nvm_save)
+    uint32_t slot;  // slot holding the current image
+    uint32_t seq;   // its sequence number
+    uint32_t slots; // number of slots the region offers for this blob size
     // Set by nvm_load(): the newest image in flash (stored_*; 0 when there is none) and what became of it when its
     // layout id or size was not this firmware's (layout_changed): migrated by hooks.nvm_migrate, or defaults.
     uint32_t stored_layout;
@@ -83,6 +83,6 @@ bool nvm_take_dirty(void);
 // Offsets are relative to the start of the region; erase works in 4096-byte sectors, program in 256-byte pages.
 #define NVM_SECTOR_BYTES 4096u
 #define NVM_PAGE_BYTES   256u
-const uint8_t *nvm_port_map(void);                                        // read-only view of the whole region
+const uint8_t *nvm_port_map(void); // read-only view of the whole region
 bool nvm_port_erase(uint32_t offset, size_t len);
 bool nvm_port_program(uint32_t offset, const uint8_t *data, size_t len);

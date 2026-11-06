@@ -1,8 +1,8 @@
 // ERASE RECORD (0C) and ERASE BINARY (0E) over T=0 against the demo card profile.
 #include "apdu/dispatch.h"
-#include "iso7816_pico/fs.h"
 #include "fake_phy.h"
 #include "fakes.h"
+#include "iso7816_pico/fs.h"
 #include "proto/t0.h"
 #include "reader.h"
 #include "test.h"
@@ -107,7 +107,7 @@ void test_fs(void) {
     // Linear variable EF 0104 (PIN 81): the erased record is empty and its slot is cleared.
     CHECK_EQ(sw("00 A4 02 0C 02 01 04"), 0x9000);
     CHECK_EQ(sw("00 20 00 81 04 30 30 30 30"), 0x9000);
-    CHECK_EQ(sw("00 DC 01 04 03 61 62 63"), 0x6A83);   // no record yet: only APPEND RECORD adds one
+    CHECK_EQ(sw("00 DC 01 04 03 61 62 63"), 0x6A83); // no record yet: only APPEND RECORD adds one
     CHECK_EQ(sw("00 E2 00 00 03 61 62 63"), 0x9000);
     CHECK_EQ(sw("00 0C 01 04 00"), 0x9000);
     CHECK_EQ(sw("00 B2 01 04 00"), 0x9000);

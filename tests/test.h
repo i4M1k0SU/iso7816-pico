@@ -9,35 +9,35 @@
 
 extern int g_checks, g_failures;
 
-#define CHECK(cond)                                                                                   \
-    do {                                                                                              \
-        g_checks++;                                                                                   \
-        if (!(cond)) {                                                                                \
-            g_failures++;                                                                             \
-            printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                                 \
-        }                                                                                             \
+#define CHECK(cond)                                                                                                    \
+    do {                                                                                                               \
+        g_checks++;                                                                                                    \
+        if (!(cond)) {                                                                                                 \
+            g_failures++;                                                                                              \
+            printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                                                   \
+        }                                                                                                              \
     } while (0)
 
-#define CHECK_EQ(a, b)                                                                                \
-    do {                                                                                              \
-        long long va_ = (long long)(a), vb_ = (long long)(b);                                         \
-        g_checks++;                                                                                   \
-        if (va_ != vb_) {                                                                             \
-            g_failures++;                                                                             \
-            printf("  FAIL %s:%d: %s == %s (0x%llX vs 0x%llX)\n", __FILE__, __LINE__, #a, #b, va_, vb_); \
-        }                                                                                             \
+#define CHECK_EQ(a, b)                                                                                                 \
+    do {                                                                                                               \
+        long long va_ = (long long)(a), vb_ = (long long)(b);                                                          \
+        g_checks++;                                                                                                    \
+        if (va_ != vb_) {                                                                                              \
+            g_failures++;                                                                                              \
+            printf("  FAIL %s:%d: %s == %s (0x%llX vs 0x%llX)\n", __FILE__, __LINE__, #a, #b, va_, vb_);               \
+        }                                                                                                              \
     } while (0)
 
 // Compare a byte array with a hex string ("DE AD BE EF").
-#define CHECK_HEX(buf, len, hex)                                                                      \
-    do {                                                                                              \
-        g_checks++;                                                                                   \
-        if (!hex_equal((buf), (len), (hex))) {                                                        \
-            g_failures++;                                                                             \
-            printf("  FAIL %s:%d: %s != %s\n    got ", __FILE__, __LINE__, #buf, hex);                \
-            hex_print((buf), (len));                                                                  \
-            printf("\n");                                                                             \
-        }                                                                                             \
+#define CHECK_HEX(buf, len, hex)                                                                                       \
+    do {                                                                                                               \
+        g_checks++;                                                                                                    \
+        if (!hex_equal((buf), (len), (hex))) {                                                                         \
+            g_failures++;                                                                                              \
+            printf("  FAIL %s:%d: %s != %s\n    got ", __FILE__, __LINE__, #buf, hex);                                 \
+            hex_print((buf), (len));                                                                                   \
+            printf("\n");                                                                                              \
+        }                                                                                                              \
     } while (0)
 
 void run_test(const char *name, void (*fn)(void));

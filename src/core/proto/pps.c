@@ -8,14 +8,14 @@ bool pps_handle(const phy_params_t *current, uint16_t offered_protocols,
                 bool (*accept)(uint16_t f, uint8_t d, uint8_t t), pps_result_t *out) {
     uint8_t req[6] = { 0xFF };
     size_t n = 1;
-    if (!phy_rx(&req[n++], false)) return false;              // PPS0
+    if (!phy_rx(&req[n++], false)) return false; // PPS0
     uint8_t pps0 = req[1];
     for (int bit = 4; bit <= 6; bit++) {
         if (pps0 & (1u << bit)) {
-            if (!phy_rx(&req[n++], false)) return false;      // PPS1..3
+            if (!phy_rx(&req[n++], false)) return false; // PPS1..3
         }
     }
-    if (!phy_rx(&req[n++], false)) return false;              // PCK
+    if (!phy_rx(&req[n++], false)) return false; // PCK
     uint8_t x = 0;
     for (size_t i = 0; i < n; i++) x ^= req[i];
     if (x != 0) {

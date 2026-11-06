@@ -15,7 +15,6 @@
 static const uint8_t s_aid[] = { 0xF0, 'P', 'I', 'C', 'O' };
 static uint32_t s_counter;
 
-
 // ---------------------------------------------------------------------------
 // life cycle
 // ---------------------------------------------------------------------------
@@ -68,8 +67,8 @@ static uint16_t h_echo(const apdu_t *cmd, apdu_resp_t *resp) {
 static uint16_t h_get_counter(const apdu_t *cmd, apdu_resp_t *resp) {
     (void)cmd;
     s_counter++;
-    uint8_t b[4] = { (uint8_t)(s_counter >> 24), (uint8_t)(s_counter >> 16),
-                     (uint8_t)(s_counter >> 8), (uint8_t)s_counter };
+    uint8_t b[4] = { (uint8_t)(s_counter >> 24), (uint8_t)(s_counter >> 16), (uint8_t)(s_counter >> 8),
+                     (uint8_t)s_counter };
     resp_put(resp, b, 4);
     return SW_OK;
 }
@@ -99,10 +98,10 @@ static uint16_t h_bootsel(const apdu_t *cmd, apdu_resp_t *resp) {
 // ---------------------------------------------------------------------------
 
 static const apdu_cmd_desc_t s_cmds[] = {
-    APDU_CMD(0x80, 0xF0, 0x10, APDU_CASE2, "GET VERSION",    h_get_version),
-    APDU_CMD(0x80, 0xF0, 0x20, APDU_CASE4, "ECHO",           h_echo),
-    APDU_CMD(0x80, 0xF0, 0x30, APDU_CASE2, "GET COUNTER",    h_get_counter),
-    APDU_CMD(0x80, 0xF0, 0x40, APDU_CASE2, "SLOW",           h_slow),
+    APDU_CMD(0x80, 0xF0, 0x10, APDU_CASE2, "GET VERSION", h_get_version),
+    APDU_CMD(0x80, 0xF0, 0x20, APDU_CASE4, "ECHO", h_echo),
+    APDU_CMD(0x80, 0xF0, 0x30, APDU_CASE2, "GET COUNTER", h_get_counter),
+    APDU_CMD(0x80, 0xF0, 0x40, APDU_CASE2, "SLOW", h_slow),
     APDU_CMD(0x80, 0xF0, 0xE0, APDU_CASE1, "REBOOT BOOTSEL", h_bootsel),
 };
 
@@ -113,10 +112,10 @@ const applet_t demo_applet = {
     .cmds = s_cmds,
     .n_cmds = sizeof s_cmds / sizeof s_cmds[0],
     .select = demo_select,
-    .deselect = NULL,     // void (*)(const applet_t *self, uint8_t channel)
-    .classify = NULL,     // every command is in the table, which also gives the T=0 case
-    .process = NULL,      // everything is in the table; ISO commands fall through.  A switch on INS here instead
-                          // needs .classify as well, or T=0 drops the data field of the commands not in the table
+    .deselect = NULL, // void (*)(const applet_t *self, uint8_t channel)
+    .classify = NULL, // every command is in the table, which also gives the T=0 case
+    .process = NULL,  // everything is in the table; ISO commands fall through.  A switch on INS here instead
+                      // needs .classify as well, or T=0 drops the data field of the commands not in the table
     .reset = demo_reset,
-    .ctx = NULL,          // per-instance state for a shared implementation (cmd->applet->ctx, self->ctx)
+    .ctx = NULL, // per-instance state for a shared implementation (cmd->applet->ctx, self->ctx)
 };

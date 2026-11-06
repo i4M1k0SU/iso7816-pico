@@ -1,7 +1,7 @@
 // NVM port for the Pico: the region is the last NVM_FLASH_BYTES of the flash, read through XIP and written with the
 // SDK's flash functions under flash_safe_execute() (interrupts off, other core parked).
-#include "hal/nvm.h"
 #include "hal/nvm_port.h"
+#include "hal/nvm.h"
 
 #include "iso7816_pico/config.h"
 #include "iso7816_pico/log.h"
@@ -25,9 +25,9 @@ typedef struct {
 bool nvm_port_region_ok(uintptr_t *program_end, uintptr_t *region_start) {
     uintptr_t start = XIP_BASE + NVM_OFFSET;
 #if PICO_NO_FLASH
-    uintptr_t end = XIP_BASE;   // the program runs from RAM and occupies no flash
+    uintptr_t end = XIP_BASE; // the program runs from RAM and occupies no flash
 #else
-    extern char __flash_binary_end;   // linker script: end of everything the image stores in flash
+    extern char __flash_binary_end; // linker script: end of everything the image stores in flash
     uintptr_t end = (uintptr_t)&__flash_binary_end;
 #endif
     if (program_end) *program_end = end;
@@ -49,12 +49,13 @@ static void do_program(void *arg) {
 
 // flash_safe_execute() with a reason in the log on failure: the generic "NVM: save FAILED" would not tell why.
 static bool run_safe(void (*fn)(void *), op_t *op) {
-    if (!nvm_port_region_ok(NULL, NULL)) return false;   // reported once at boot by card_runtime_init()
+    if (!nvm_port_region_ok(NULL, NULL)) return false; // reported once at boot by card_runtime_init()
     int rc = flash_safe_execute(fn, op, 1000);
     if (rc == PICO_OK) return true;
     log_printf("NVM: flash_safe_execute() failed (%d)%s", rc,
                rc == PICO_ERROR_NOT_PERMITTED || rc == PICO_ERROR_TIMEOUT
-                   ? ": if core1 runs, it must call flash_safe_execute_core_init()" : "");
+                   ? ": if core1 runs, it must call flash_safe_execute_core_init()"
+                   : "");
     return false;
 }
 

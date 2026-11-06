@@ -6,16 +6,16 @@
 
 #include <string.h>
 
-#define NVM_MAGIC    0x324E5637u   // "7VN2": header with a layout id
-#define NVM_MAGIC_V1 0x4D564E37u   // "7NVM": the first format, 16-byte header without a layout id (layout 0)
+#define NVM_MAGIC    0x324E5637u // "7VN2": header with a layout id
+#define NVM_MAGIC_V1 0x4D564E37u // "7NVM": the first format, 16-byte header without a layout id (layout 0)
 
 typedef struct {
     uint32_t magic;
-    uint32_t size;      // blob size
-    uint32_t seq;       // increases with every write; the newest valid image wins
-    uint32_t crc;       // CRC-32 of the blob
-    uint32_t layout;    // nvm_layout_id() of the firmware that wrote it
-    uint32_t reserved;  // FFFFFFFF; keeps the blob 8-byte aligned in flash
+    uint32_t size;     // blob size
+    uint32_t seq;      // increases with every write; the newest valid image wins
+    uint32_t crc;      // CRC-32 of the blob
+    uint32_t layout;   // nvm_layout_id() of the firmware that wrote it
+    uint32_t reserved; // FFFFFFFF; keeps the blob 8-byte aligned in flash
 } nvm_header_t;
 
 #define NVM_HEADER_V1_BYTES 16u
@@ -26,8 +26,8 @@ _Static_assert(NVM_FLASH_BYTES % NVM_SECTOR_BYTES == 0, "NVM_FLASH_BYTES must be
 
 // A valid image found in flash, in either header format.
 typedef struct {
-    uint32_t off;       // offset of its header in the region (a sector boundary)
-    uint32_t hdr;       // header bytes (24, or 16 for the first format)
+    uint32_t off; // offset of its header in the region (a sector boundary)
+    uint32_t hdr; // header bytes (24, or 16 for the first format)
     uint32_t size, seq, layout;
 } nvm_image_t;
 
@@ -145,8 +145,9 @@ bool nvm_load(void *blob, size_t size) {
         return true;
     }
     log_printf("NVM: stored image has layout %08lX (%lu bytes), firmware expects %08lX (%lu bytes): %s, "
-               "using defaults", (unsigned long)im.layout, (unsigned long)im.size, (unsigned long)want,
-               (unsigned long)size, migrate ? "migration refused" : "no nvm_migrate hook");
+               "using defaults",
+               (unsigned long)im.layout, (unsigned long)im.size, (unsigned long)want, (unsigned long)size,
+               migrate ? "migration refused" : "no nvm_migrate hook");
     // Save the defaults at the next opportunity, so that they supersede the old image and this happens only once.
     nvm_mark_dirty();
     return false;
@@ -206,7 +207,9 @@ nvm_save_result_t nvm_save(const void *blob, size_t size) {
 nvm_save_result_t nvm_save_logged(const void *blob, size_t size, const char *why) {
     nvm_save_result_t r = nvm_save(blob, size);
     log_printf("NVM: %s (slot %lu, seq %lu)%s%s",
-               r == NVM_SAVE_WRITTEN ? "saved" : r == NVM_SAVE_UNCHANGED ? "unchanged" : "save FAILED",
+               r == NVM_SAVE_WRITTEN     ? "saved"
+               : r == NVM_SAVE_UNCHANGED ? "unchanged"
+                                         : "save FAILED",
                (unsigned long)s_status.slot, (unsigned long)s_status.seq, why ? " " : "", why ? why : "");
     return r;
 }

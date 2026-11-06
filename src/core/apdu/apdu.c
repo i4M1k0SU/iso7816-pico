@@ -37,20 +37,20 @@ bool apdu_decode(const uint8_t *buf, size_t len, apdu_t *out) {
     out->extended = false;
     out->applet = NULL;
 
-    if (len == 4) return true;                                   // case 1
-    if (len == 5) {                                              // case 2S
+    if (len == 4) return true; // case 1
+    if (len == 5) {            // case 2S
         out->le = buf[4] ? buf[4] : 256;
         out->le_present = true;
         return true;
     }
-    if (buf[4] != 0) {                                           // short Lc
+    if (buf[4] != 0) { // short Lc
         uint32_t lc = buf[4];
-        if (len == 5 + lc) {                                     // case 3S
+        if (len == 5 + lc) { // case 3S
             out->lc = lc;
             out->data = &buf[5];
             return true;
         }
-        if (len == 6 + lc) {                                     // case 4S
+        if (len == 6 + lc) { // case 4S
             out->lc = lc;
             out->data = &buf[5];
             out->le = buf[5 + lc] ? buf[5 + lc] : 256;
@@ -60,7 +60,7 @@ bool apdu_decode(const uint8_t *buf, size_t len, apdu_t *out) {
         return false;
     }
     out->extended = true;
-    if (len == 7) {                                              // case 2E
+    if (len == 7) { // case 2E
         out->le = ((uint32_t)buf[5] << 8) | buf[6];
         if (!out->le) out->le = 65536;
         out->le_present = true;
@@ -69,12 +69,12 @@ bool apdu_decode(const uint8_t *buf, size_t len, apdu_t *out) {
     if (len < 7) return false;
     uint32_t lc = ((uint32_t)buf[5] << 8) | buf[6];
     if (!lc) return false;
-    if (len == 7 + lc) {                                         // case 3E
+    if (len == 7 + lc) { // case 3E
         out->lc = lc;
         out->data = &buf[7];
         return true;
     }
-    if (len == 9 + lc) {                                         // case 4E
+    if (len == 9 + lc) { // case 4E
         out->lc = lc;
         out->data = &buf[7];
         out->le = ((uint32_t)buf[7 + lc] << 8) | buf[8 + lc];

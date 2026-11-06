@@ -35,8 +35,8 @@ void test_t0(void) {
     CHECK_EQ(n, 7);
     CHECK_EQ(tx[0], 0x30);
     CHECK_EQ(tx[5], 0x90);
-    uint32_t counter = ((uint32_t)r.data[0] << 24) | ((uint32_t)r.data[1] << 16) | ((uint32_t)r.data[2] << 8) |
-                       r.data[3];
+    uint32_t counter =
+        ((uint32_t)r.data[0] << 24) | ((uint32_t)r.data[1] << 16) | ((uint32_t)r.data[2] << 8) | r.data[3];
 
     // Wrong Le: 6C xx, and the re-issued command is served from the kept response (no second execution).
     CHECK(tpdu("80 30 00 00 00", &r));
@@ -45,7 +45,7 @@ void test_t0(void) {
     CHECK(tpdu("80 30 00 00 04", &r));
     CHECK_EQ(r.sw, 0x9000);
     CHECK_EQ(r.data[3], (counter + 1) & 0xFF);
-    CHECK(tpdu("80 30 00 00 04", &r));          // a fresh command executes again
+    CHECK(tpdu("80 30 00 00 04", &r)); // a fresh command executes again
     CHECK_EQ(r.data[3], (counter + 2) & 0xFF);
 
     // Case 4: 61 xx, GET RESPONSE with the right / wrong Le, GET RESPONSE with nothing pending.
@@ -65,7 +65,7 @@ void test_t0(void) {
     for (int i = 0; i < 255; i++) big[5 + i] = (uint8_t)i;
     CHECK(t0r_tpdu(big, sizeof big, &r));
     CHECK_EQ(r.sw, 0x61FF);
-    CHECK(tpdu("00 C0 00 00 00", &r));          // Le = 256 > 255 remaining -> 6C FF
+    CHECK(tpdu("00 C0 00 00 00", &r)); // Le = 256 > 255 remaining -> 6C FF
     CHECK_EQ(r.sw, 0x6CFF);
     CHECK(tpdu("00 C0 00 00 FF", &r));
     CHECK_EQ(r.sw, 0x9000);
@@ -100,11 +100,11 @@ void test_t0(void) {
     CHECK_HEX(r.data, r.len, "DE AD BE EF");
     uint8_t env[5 + 255];
     memcpy(env, "\x00\xC2\x00\x00\xFF", 5);
-    memcpy(env + 5, "\x80\x20\x00\x00\x00\x00\xF8", 7);      // case 3E, Lc = 248 -> exactly 255 bytes
+    memcpy(env + 5, "\x80\x20\x00\x00\x00\x00\xF8", 7); // case 3E, Lc = 248 -> exactly 255 bytes
     for (int i = 0; i < 248; i++) env[12 + i] = (uint8_t)i;
     CHECK(t0r_tpdu(env, sizeof env, &r));
     CHECK_EQ(r.sw, 0x9000);
-    CHECK(apdu("00 C2 00 00 00", &r));          // terminator
+    CHECK(apdu("00 C2 00 00 00", &r)); // terminator
     CHECK_EQ(r.sw, 0x9000);
     CHECK_EQ(r.len, 248);
     CHECK_EQ(r.data[247], 247);
@@ -117,7 +117,7 @@ void test_t0(void) {
     CHECK_EQ(r.sw, 0x6104);
     CHECK_EQ(r.len, 0);
     tx = fake_phy_tx_log(&n);
-    CHECK_EQ(n, 3);                              // ACK for the ENVELOPE data, then 61 04 and nothing else
+    CHECK_EQ(n, 3); // ACK for the ENVELOPE data, then 61 04 and nothing else
     CHECK_EQ(tx[0], 0xC2);
     CHECK(tpdu("00 C0 00 00 04", &r));
     CHECK_EQ(r.sw, 0x9000);
@@ -126,10 +126,10 @@ void test_t0(void) {
     // Inner Le (16) differs from the response length: still 61 04, never 6C xx to the ENVELOPE.
     CHECK(tpdu("00 C2 00 00 07 80 30 00 00 00 00 10", &r));
     CHECK_EQ(r.sw, 0x6104);
-    CHECK(apdu("00 C2 00 00 07 80 30 00 00 00 00 00", &r));   // Le = 65536, through the PC/SC-like model
+    CHECK(apdu("00 C2 00 00 07 80 30 00 00 00 00 00", &r)); // Le = 65536, through the PC/SC-like model
     CHECK_EQ(r.sw, 0x9000);
     CHECK_EQ(r.len, 4);
-    CHECK_EQ(r.data[3], (counter + 2) & 0xFF);   // one execution per ENVELOPE (the previous one was discarded)
+    CHECK_EQ(r.data[3], (counter + 2) & 0xFF); // one execution per ENVELOPE (the previous one was discarded)
 
     // ENVELOPE with an inner extended case 4 (ECHO, Lc = 3, Le = 65536).
     CHECK(tpdu("00 C2 00 00 0C 80 20 00 00 00 00 03 AA BB CC 00 00", &r));
@@ -155,7 +155,7 @@ void test_t0(void) {
     t0_set_wi(2);
     CHECK(tpdu("80 30 00 00 04", &r));
     CHECK_EQ(fake_phy_last_timeout_us(), 960u * 2 * d * 94);
-    t0_set_wi(0);                                // reserved value: back to the default
+    t0_set_wi(0); // reserved value: back to the default
     CHECK(tpdu("80 30 00 00 04", &r));
     CHECK_EQ(fake_phy_last_timeout_us(), 960u * 10 * d * 94);
     // A stray character followed by silence does not shift the next header.
@@ -205,7 +205,7 @@ void test_t0(void) {
     CHECK_EQ(r.len, 0);
     tx = fake_phy_tx_log(&n);
     CHECK_EQ(n, 2);
-    CHECK(tpdu("00 70 80 01 00", &r));           // close it again
+    CHECK(tpdu("00 70 80 01 00", &r)); // close it again
     CHECK_EQ(r.sw, 0x9000);
 
     // The reader asserting RST in the middle of a command aborts it.

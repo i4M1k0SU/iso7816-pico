@@ -9,9 +9,9 @@ typedef enum { ST_PROC, ST_DATA, ST_SW2, ST_DONE, ST_ERROR } state_t;
 
 static state_t s_state;
 static uint8_t s_ins;
-static const uint8_t *s_out_data;   // data still to send after the ACK
+static const uint8_t *s_out_data; // data still to send after the ACK
 static size_t s_out_len;
-static size_t s_expect_in;          // bytes the card will send after the ACK (case 2)
+static size_t s_expect_in; // bytes the card will send after the ACK (case 2)
 static reader_result_t *s_res;
 static uint32_t s_nulls;
 
@@ -35,7 +35,7 @@ static void hook(uint8_t b) {
             } else if (s_expect_in) {
                 s_state = ST_DATA;
             } else {
-                s_state = ST_ERROR;   // ACK for a command without data in either direction
+                s_state = ST_ERROR; // ACK for a command without data in either direction
             }
         } else if ((b & 0xF0) == 0x60 || (b & 0xF0) == 0x90) {
             s_res->sw = (uint16_t)(b << 8);
@@ -62,7 +62,7 @@ bool t0r_tpdu(const uint8_t *apdu, size_t len, reader_result_t *out) {
     if (len < 5) return false;
     uint8_t p3 = apdu[4];
     size_t data_len = len - 5;
-    if (data_len && data_len != p3 && data_len != (size_t)p3 + 1) return false;   // Lc mismatch
+    if (data_len && data_len != p3 && data_len != (size_t)p3 + 1) return false; // Lc mismatch
     if (data_len) data_len = p3;
 
     out->len = 0;

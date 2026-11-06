@@ -8,7 +8,7 @@
 #define LOG_SIZE   65536
 
 static uint8_t s_queue[QUEUE_SIZE];
-static bool s_gap[QUEUE_SIZE];       // silence before the byte at this queue position
+static bool s_gap[QUEUE_SIZE]; // silence before the byte at this queue position
 static size_t s_q_head, s_q_tail;
 static uint8_t s_log[LOG_SIZE];
 static size_t s_log_len;
