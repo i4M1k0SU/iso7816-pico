@@ -31,7 +31,11 @@
 typedef struct applet {
     const char *name;
     const uint8_t *aid;
-    uint8_t aid_len;
+    uint8_t aid_len;               // 1..16 (ISO 7816-4)
+
+    // Opaque, for the application: e.g. the instance state when one implementation serves several applets / AIDs.
+    // Handlers reach it as cmd->applet->ctx, the life-cycle callbacks as self->ctx.  The framework never touches it.
+    void *ctx;
 
     // Command table: classifies commands for T=0 and, where `handler` is set, routes them.  Commands without a handler
     // (or not in the table) go to `process`.
@@ -42,7 +46,8 @@ typedef struct applet {
     // decodes its commands in `process` (a switch on INS).  Consulted for the applet selected on the channel the CLA
     // addresses, after its table and before the interindustry table and hooks.classify.  Return APDU_CASE_UNKNOWN for
     // "not mine".  Without it such a command is case 1 under T=0: P3 is ignored and the data field is not received.
-    apdu_case_t (*classify)(uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2);
+    // `self` is this applet.
+    apdu_case_t (*classify)(const struct applet *self, uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2);
 
     // Optional.  Called by SELECT (and by the implicit selections: the default applet after every ATR, MANAGE CHANNEL
     // open, which pass a SELECT by DF name with P2 = 0C and discard the response).  The DF named like the AID (if any)
@@ -51,18 +56,20 @@ typedef struct applet {
     // or a warning (62xx / 63xx) keeps the applet selected; any other SW leaves the channel with no applet selected
     // (the previous one was already deselected, the security state is cleared, the current file is unchanged by the
     // SELECT, the response data is dropped; a failing MANAGE CHANNEL open does not open the channel).  When NULL the
-    // framework answers 6F len { 84 len AID } (unless P2 says "no response data").
+    // framework answers 6F len { 84 len AID } (unless P2 says "no response data").  cmd->applet is this applet.
     uint16_t (*select)(const apdu_t *cmd, apdu_resp_t *resp);
 
-    // Optional.  Another applet or DF is being selected on this channel, or the channel is being closed.
-    void (*deselect)(uint8_t channel);
+    // Optional.  Another applet or DF is being selected on this channel, or the channel is being closed.  `self` is
+    // this applet.
+    void (*deselect)(const struct applet *self, uint8_t channel);
 
     // Optional.  Catch-all for commands without a table handler.  Return APDU_UNHANDLED to let the interindustry
     // commands / hooks try.  A switch-style applet should also provide `classify` (T=0).
     uint16_t (*process)(const apdu_t *cmd, apdu_resp_t *resp);
 
-    // Optional.  Called after every ATR (volatile state back to defaults).
-    void (*reset)(void);
+    // Optional.  Called after every ATR (volatile state back to defaults), for every applet of the profile.  `self` is
+    // this applet.
+    void (*reset)(const struct applet *self);
 } applet_t;
 
 // ---------------------------------------------------------------------------

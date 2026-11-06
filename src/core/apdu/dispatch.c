@@ -47,7 +47,8 @@ void dispatch_reset(void) {
     fs_reset();
     sec_reset();
     for (size_t i = 0; i < card_profile->n_applets; i++) {
-        if (card_profile->applets[i]->reset) card_profile->applets[i]->reset();
+        const applet_t *a = card_profile->applets[i];
+        if (a->reset) a->reset(a);
     }
     // The default applet is selected implicitly, exactly as an explicit SELECT would: its DF (if one shares its name)
     // becomes current and its select() runs.  Nothing is sent to the reader, so the response buffer is free here.
@@ -119,7 +120,7 @@ apdu_case_t dispatch_classify(uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2) 
     const apdu_cmd_desc_t *d = applet_find(a, cla, ins);
     if (d) return d->kind;
     if (a && a->classify) {
-        apdu_case_t k = a->classify(cla, ins, p1, p2);
+        apdu_case_t k = a->classify(a, cla, ins, p1, p2);
         if (k != APDU_CASE_UNKNOWN) return k;
     }
     if (card_profile->iso_commands) {
@@ -174,7 +175,7 @@ void card_put_default_fci(apdu_resp_t *resp, const uint8_t *aid, size_t aid_len)
 
 static void deselect_applet(uint8_t ch) {
     const applet_t *old = s_ch[ch].applet;
-    if (old && old->deselect) old->deselect(ch);
+    if (old && old->deselect) old->deselect(old, ch);
     s_ch[ch].applet = NULL;
 }
 
@@ -222,7 +223,11 @@ static uint16_t activate_applet(uint8_t ch, const applet_t *a, const apdu_t *cmd
     s_ch[ch].applet = a;    // already visible to select(), e.g. for a nested dispatch_classify()
 
     uint16_t sw = SW_OK;
-    if (a->select) sw = a->select(cmd, resp);
+    if (a->select) {
+        apdu_t c = *cmd;
+        c.applet = a;
+        sw = a->select(&c, resp);
+    }
     else if ((cmd->p2 & 0x0C) != 0x0C) card_put_default_fci(resp, a->aid, a->aid_len);
     if (select_succeeded(sw)) return sw;
 
@@ -238,7 +243,7 @@ static uint16_t activate_applet(uint8_t ch, const applet_t *a, const apdu_t *cmd
 static uint16_t implicit_select(uint8_t ch, const applet_t *a, const fs_cursor_t *start, apdu_resp_t *resp) {
     apdu_t cmd = {
         .cla = ch < 4 ? ch : (uint8_t)(0x40 | (ch - 4)), .ins = 0xA4, .p1 = 0x04, .p2 = 0x0C,
-        .data = a->aid, .lc = a->aid_len, .channel = ch, .interindustry = true,
+        .data = a->aid, .lc = a->aid_len, .channel = ch, .interindustry = true, .applet = a,
     };
     uint16_t sw = activate_applet(ch, a, &cmd, resp, start);
     resp->len = 0;
@@ -371,11 +376,15 @@ uint16_t dispatch_process(const apdu_t *in, apdu_resp_t *resp) {
     apdu_t cmd = *in;
     resp->len = 0;
     decode_cla(in->cla, &cmd);
+    cmd.applet = NULL;
 
     if (in->cla == 0xFF) return SW_CLA_NOT_SUPPORTED;
     if (cmd.channel >= max_channels() || !s_ch[cmd.channel].open) {
         return SW_LOGICAL_CHANNEL_NOT_SUPP;
     }
+    // The applet in charge as the command arrives; it stays so for the whole command (sm_wrap included), even when the
+    // command is a SELECT that changes it.
+    cmd.applet = s_ch[cmd.channel].applet;
 
     // Secure messaging: unwrap first so that chaining sees plain data.
     if (cmd.sm) {

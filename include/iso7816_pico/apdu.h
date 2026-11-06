@@ -9,6 +9,8 @@
 
 // ---- Command / response -------------------------------------------------------
 
+struct applet;   // applet_t, defined in iso7816_pico/card.h
+
 typedef struct {
     uint8_t cla, ins, p1, p2;
     const uint8_t *data;   // command data field (NULL when lc == 0)
@@ -22,6 +24,10 @@ typedef struct {
     bool chaining;         // command chaining: more commands follow
     uint8_t sm;            // secure messaging indication 0..3 (0 = none)
     bool interindustry;    // CLA bit 8 = 0
+    // The applet selected on the addressed channel when the dispatcher took the command (NULL when none), so that one
+    // implementation can serve several applets (cmd->applet->ctx).  Inside an applet's select() it is the applet being
+    // selected.  Filled by the dispatcher before any handler, hook, select() or process() runs.
+    const struct applet *applet;
 } apdu_t;
 
 typedef struct {
