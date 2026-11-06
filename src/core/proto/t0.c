@@ -95,7 +95,7 @@ static bool send_response(const uint8_t hdr[5], apdu_case_t kind, uint32_t le,
         s_pending_6c = true;
         return send_sw(SW_WRONG_LE(resp->len));
     }
-    // Case 4 (and long case 2): the host fetches the data with GET RESPONSE.
+    // Case 4, long case 2 and everything inside an ENVELOPE: the host fetches the data with GET RESPONSE.
     return send_sw(sw_more_data(resp->len));
 }
 
@@ -129,9 +129,10 @@ static bool handle_envelope(const uint8_t hdr[5]) {
     bool complete = apdu_decode(buf, s_env_len, &cmd);
     s_env_len = 0;
     if (!complete) return send_sw(SW_WRONG_DATA);
-    apdu_case_t kind = cmd.lc ? APDU_CASE4 : (cmd.le_present ? APDU_CASE2 : APDU_CASE1);
-    if (kind == APDU_CASE2 && cmd.le > 256) kind = APDU_CASE4;   // fetch via GET RESPONSE
-    return run_command(hdr, &cmd, kind);
+    // The ENVELOPE TPDU itself is case 3: the reader has sent all its bytes and expects only SW1 SW2 now.  So any
+    // response data of the inner APDU (case 2 included, whatever its Le) is announced with 61 xx and fetched with
+    // GET RESPONSE, never sent after a second ACK or bounced with 6C xx.  Without data the plain SW goes out.
+    return run_command(hdr, &cmd, APDU_CASE4);
 }
 
 bool t0_handle_command(int first_byte) {

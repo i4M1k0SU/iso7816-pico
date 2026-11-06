@@ -109,6 +109,35 @@ void test_t0(void) {
     CHECK_EQ(r.len, 248);
     CHECK_EQ(r.data[247], 247);
 
+    // ENVELOPE with an inner extended case 2 (Lc = 0, Le = 4 = the response length): the ENVELOPE TPDU is case 3, so
+    // the data comes through 61 xx / GET RESPONSE, not as a second ACK + data (the reader model flags that as an
+    // error and t0r_tpdu fails).
+    fake_phy_tx_clear();
+    CHECK(tpdu("00 C2 00 00 07 80 30 00 00 00 00 04", &r));
+    CHECK_EQ(r.sw, 0x6104);
+    CHECK_EQ(r.len, 0);
+    tx = fake_phy_tx_log(&n);
+    CHECK_EQ(n, 3);                              // ACK for the ENVELOPE data, then 61 04 and nothing else
+    CHECK_EQ(tx[0], 0xC2);
+    CHECK(tpdu("00 C0 00 00 04", &r));
+    CHECK_EQ(r.sw, 0x9000);
+    CHECK_EQ(r.len, 4);
+    counter = ((uint32_t)r.data[0] << 24) | ((uint32_t)r.data[1] << 16) | ((uint32_t)r.data[2] << 8) | r.data[3];
+    // Inner Le (16) differs from the response length: still 61 04, never 6C xx to the ENVELOPE.
+    CHECK(tpdu("00 C2 00 00 07 80 30 00 00 00 00 10", &r));
+    CHECK_EQ(r.sw, 0x6104);
+    CHECK(apdu("00 C2 00 00 07 80 30 00 00 00 00 00", &r));   // Le = 65536, through the PC/SC-like model
+    CHECK_EQ(r.sw, 0x9000);
+    CHECK_EQ(r.len, 4);
+    CHECK_EQ(r.data[3], (counter + 2) & 0xFF);   // one execution per ENVELOPE (the previous one was discarded)
+
+    // ENVELOPE with an inner extended case 4 (ECHO, Lc = 3, Le = 65536).
+    CHECK(tpdu("00 C2 00 00 0C 80 20 00 00 00 00 03 AA BB CC 00 00", &r));
+    CHECK_EQ(r.sw, 0x6103);
+    CHECK(tpdu("00 C0 00 00 03", &r));
+    CHECK_EQ(r.sw, 0x9000);
+    CHECK_HEX(r.data, r.len, "AA BB CC");
+
     // The reader asserting RST in the middle of a command aborts it.
     fake_phy_push_hex("80 20 00 00 04 DE AD");
     fake_phy_set_reset(true);
