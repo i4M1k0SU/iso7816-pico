@@ -119,7 +119,7 @@ Pico 2 (RP2350) 向けは `-DPICO_BOARD=pico2` を付けて別のビルドディ
 
 ```
 === My Card 2.3 (9e80cac) ===
-iso7816-pico 1.0 (e6eabb5)
+--- iso7816-pico 1.0 (e6eabb5) ---
 ```
 
 1 行目はカードプロファイルの `name` / `version` (NULL なら `pico_set_program_name` / `pico_set_program_version`) と

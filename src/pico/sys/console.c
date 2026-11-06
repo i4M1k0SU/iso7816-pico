@@ -184,9 +184,9 @@ static void print_identity(void) {
     const char *version = card_profile->version ? card_profile->version : PICO_PROGRAM_VERSION_STRING;
     log_printf("=== %s%s%s (%s) ===", name, *version ? " " : "", version, ISO7816_PICO_APP_COMMIT);
     if (strcmp(ISO7816_PICO_COMMIT, ISO7816_PICO_APP_COMMIT) == 0) {
-        log_printf("iso7816-pico %s", ISO7816_PICO_VERSION_STRING);
+        log_printf("--- iso7816-pico %s ---", ISO7816_PICO_VERSION_STRING);
     } else {
-        log_printf("iso7816-pico %s (%s)", ISO7816_PICO_VERSION_STRING, ISO7816_PICO_COMMIT);
+        log_printf("--- iso7816-pico %s (%s) ---", ISO7816_PICO_VERSION_STRING, ISO7816_PICO_COMMIT);
     }
 }
 
