@@ -17,11 +17,25 @@ static bool s_pending_6c;
 // ENVELOPE reassembly (extended-length APDU over T=0).
 static uint32_t s_env_len;
 
+// Waiting time integer (TC2 of the ATR) for the WWT used inside a TPDU.
+#define T0_DEFAULT_WI 10
+static uint8_t s_wi = T0_DEFAULT_WI;
+
 void t0_session_begin(void) {
     s_pending = NULL;
     s_pending_len = s_pending_off = 0;
     s_pending_6c = false;
     s_env_len = 0;
+    s_wi = T0_DEFAULT_WI;
+}
+
+void t0_set_wi(uint8_t wi) { s_wi = wi ? wi : T0_DEFAULT_WI; }   // TC2 = 00 is reserved
+
+// WWT = 960 x D x WI ETU (ISO 7816-3:2006 10.2), recomputed per use because a PPS may have changed D.  The ETU is
+// rounded up so that the card never gives up before the reader would.
+static uint32_t wwt_us(void) {
+    uint64_t us = 960ull * s_wi * phy_params()->d * (phy_etu_us() + 1);
+    return us > UINT32_MAX ? UINT32_MAX : (uint32_t)us;
 }
 
 static bool send_sw(uint16_t sw) {
@@ -37,11 +51,15 @@ bool t0_keepalive(void) {
     return phy_tx(&null_byte, 1);
 }
 
-static bool rx_data(uint8_t *buf, size_t n) {
+// Receive n bytes that the reader sends back to back (rest of a header, data field after the ACK).  Each byte must
+// come within WWT of the previous one: 1 = all received, 0 = the reader went silent, -1 = reset.
+static int rx_bytes(uint8_t *buf, size_t n) {
+    uint32_t timeout = wwt_us();
     for (size_t i = 0; i < n; i++) {
-        if (!phy_rx(&buf[i], false)) return false;
+        int r = phy_rx_timeout(&buf[i], timeout);
+        if (r <= 0) return r;
     }
-    return true;
+    return 1;
 }
 
 static uint16_t sw_more_data(uint32_t remaining) {
@@ -117,7 +135,14 @@ static bool handle_envelope(const uint8_t hdr[5]) {
         return send_sw(SW_WRONG_LENGTH);
     }
     if (lc) {
-        if (!send_ack(hdr[1]) || !rx_data(&buf[s_env_len], lc)) return false;
+        if (!send_ack(hdr[1])) return false;
+        int r = rx_bytes(&buf[s_env_len], lc);
+        if (r <= 0) {
+            s_env_len = 0;              // the chain is broken either way
+            if (r < 0) return false;
+            log_printf("T=0: ENVELOPE data stopped short (%lu bytes expected), dropped", (unsigned long)lc);
+            return true;
+        }
         s_env_len += lc;
     }
     // ISO 7816-4 does not say how an ENVELOPE chain ends, so this is our convention (docs/internals.md): an ENVELOPE
@@ -137,10 +162,15 @@ static bool handle_envelope(const uint8_t hdr[5]) {
 
 bool t0_handle_command(int first_byte) {
     uint8_t hdr[5];
-    int i = 0;
-    if (first_byte >= 0) hdr[i++] = (uint8_t)first_byte;
-    for (; i < 5; i++) {
-        if (!phy_rx(&hdr[i], i == 0)) return false;
+    if (first_byte >= 0) hdr[0] = (uint8_t)first_byte;
+    else if (!phy_rx(&hdr[0], true)) return false;
+    // The rest of the header follows back to back.  A lone character (noise, a stray echo) would otherwise become CLA
+    // and shift every later header by one byte; drop it and wait for a new header.
+    int r = rx_bytes(&hdr[1], 4);
+    if (r < 0) return false;
+    if (r == 0) {
+        log_printf("T=0: partial header (CLA %02X), dropped", hdr[0]);
+        return true;
     }
 
     uint8_t cla = hdr[0], ins = hdr[1];
@@ -181,7 +211,14 @@ bool t0_handle_command(int first_byte) {
         cmd.lc = hdr[4];
         if (cmd.lc) {
             cmd.data = data_in;
-            if (!send_ack(ins) || !rx_data(data_in, cmd.lc)) return false;
+            if (!send_ack(ins)) return false;
+            r = rx_bytes(data_in, cmd.lc);
+            if (r < 0) return false;
+            if (r == 0) {
+                log_printf("T=0: %02X %02X data stopped short (%lu bytes expected), dropped", cla, ins,
+                           (unsigned long)cmd.lc);
+                return true;
+            }
         }
         if (kind == APDU_CASE4 || cmd.lc == 0) {
             // P3 = 0 with a data-in command: no data, treat as "Le = 256".

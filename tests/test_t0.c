@@ -138,6 +138,65 @@ void test_t0(void) {
     CHECK_EQ(r.sw, 0x9000);
     CHECK_HEX(r.data, r.len, "AA BB CC");
 
+    // A partial header (3 bytes, then silence) is dropped without an answer; the next full header works.
+    uint32_t timeouts = fake_phy_rx_timeouts();
+    fake_phy_tx_clear();
+    fake_phy_push_hex("80 30 00");
+    CHECK(t0_handle_command(-1));
+    tx = fake_phy_tx_log(&n);
+    CHECK_EQ(n, 0);
+    CHECK_EQ(fake_phy_rx_timeouts(), timeouts + 1);
+    CHECK(tpdu("80 30 00 00 04", &r));
+    CHECK_EQ(r.sw, 0x9000);
+    CHECK_EQ(r.len, 4);
+    // The deadline is WWT = 960 x D x WI ETU (fake PHY: ETU 93 us, rounded up to 94; D as an earlier PPS left it).
+    uint32_t d = phy_params()->d;
+    CHECK_EQ(fake_phy_last_timeout_us(), 960u * 10 * d * 94);
+    t0_set_wi(2);
+    CHECK(tpdu("80 30 00 00 04", &r));
+    CHECK_EQ(fake_phy_last_timeout_us(), 960u * 2 * d * 94);
+    t0_set_wi(0);                                // reserved value: back to the default
+    CHECK(tpdu("80 30 00 00 04", &r));
+    CHECK_EQ(fake_phy_last_timeout_us(), 960u * 10 * d * 94);
+    // A stray character followed by silence does not shift the next header.
+    fake_phy_tx_clear();
+    fake_phy_push_hex("3F");
+    fake_phy_push_gap();
+    fake_phy_push_hex("80 30 00 00 04");
+    CHECK(t0_handle_command(-1));
+    tx = fake_phy_tx_log(&n);
+    CHECK_EQ(n, 0);
+    CHECK_EQ(fake_phy_pending(), 5);
+    fake_phy_clear();
+    CHECK(tpdu("80 30 00 00 04", &r));
+    CHECK_EQ(r.sw, 0x9000);
+    // The same with the session layer passing the first byte (as session_run() does).
+    fake_phy_tx_clear();
+    CHECK(t0_handle_command(0x3F));
+    tx = fake_phy_tx_log(&n);
+    CHECK_EQ(n, 0);
+
+    // A data field that stops short is dropped: the card sent only the ACK, and the next command works.
+    fake_phy_tx_clear();
+    fake_phy_push_hex("80 20 00 00 04 DE AD");
+    CHECK(t0_handle_command(-1));
+    tx = fake_phy_tx_log(&n);
+    CHECK_EQ(n, 1);
+    CHECK_EQ(tx[0], 0x20);
+    CHECK_EQ(fake_phy_pending(), 0);
+    CHECK(apdu("80 20 00 00 02 01 02", &r));
+    CHECK_EQ(r.sw, 0x9000);
+    CHECK_HEX(r.data, r.len, "01 02");
+    // Same for an ENVELOPE piece: the chain is discarded, so a following short ENVELOPE stands alone.
+    fake_phy_tx_clear();
+    fake_phy_push_hex("00 C2 00 00 FF 80 20 00 00");
+    CHECK(t0_handle_command(-1));
+    tx = fake_phy_tx_log(&n);
+    CHECK_EQ(n, 1);
+    CHECK(apdu("00 C2 00 00 09 80 20 00 00 00 00 02 01 02", &r));
+    CHECK_EQ(r.sw, 0x9000);
+    CHECK_HEX(r.data, r.len, "01 02");
+
     // The reader asserting RST in the middle of a command aborts it.
     fake_phy_push_hex("80 20 00 00 04 DE AD");
     fake_phy_set_reset(true);

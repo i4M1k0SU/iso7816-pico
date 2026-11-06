@@ -8,6 +8,7 @@
 #define LOG_SIZE   65536
 
 static uint8_t s_queue[QUEUE_SIZE];
+static bool s_gap[QUEUE_SIZE];       // silence before the byte at this queue position
 static size_t s_q_head, s_q_tail;
 static uint8_t s_log[LOG_SIZE];
 static size_t s_log_len;
@@ -16,7 +17,7 @@ static bool s_reset;
 static bool s_in_reset = true;
 static phy_params_t s_params = PHY_PARAMS_DEFAULT;
 static phy_stats_t s_stats;
-static uint32_t s_apply_count, s_rx_timeouts;
+static uint32_t s_apply_count, s_rx_timeouts, s_last_timeout_us;
 static void (*s_idle_hook)(void);
 
 // ---- test-side API -----------------------------------------------------------------------------------------------
@@ -38,10 +39,13 @@ void fake_phy_push_hex(const char *hex) {
     fake_phy_push(buf, n);
 }
 
+void fake_phy_push_gap(void) { s_gap[s_q_tail] = true; }
+
 size_t fake_phy_pending(void) { return (s_q_tail - s_q_head + QUEUE_SIZE) % QUEUE_SIZE; }
 
 void fake_phy_clear(void) {
     s_q_head = s_q_tail = 0;
+    memset(s_gap, 0, sizeof s_gap);
     s_log_len = 0;
     s_reset = false;
 }
@@ -59,6 +63,7 @@ void fake_phy_set_reset(bool asserted) { s_reset = asserted; }
 
 uint32_t fake_phy_apply_count(void) { return s_apply_count; }
 uint32_t fake_phy_rx_timeouts(void) { return s_rx_timeouts; }
+uint32_t fake_phy_last_timeout_us(void) { return s_last_timeout_us; }
 
 // ---- phy.h implementation ------------------------------------------------------------------------------------------
 
@@ -103,6 +108,7 @@ uint32_t phy_etu_us(void) { return 93; }
 
 static bool pop(uint8_t *byte) {
     if (s_q_head == s_q_tail) return false;
+    s_gap[s_q_head] = false;
     *byte = s_queue[s_q_head];
     s_q_head = (s_q_head + 1) % QUEUE_SIZE;
     return true;
@@ -120,8 +126,13 @@ bool phy_rx(uint8_t *byte, bool idle) {
 }
 
 int phy_rx_timeout(uint8_t *byte, uint32_t timeout_us) {
-    (void)timeout_us;
+    s_last_timeout_us = timeout_us;
     if (s_reset) return -1;
+    if (s_gap[s_q_head]) {
+        s_gap[s_q_head] = false;
+        s_rx_timeouts++;
+        return 0;
+    }
     if (pop(byte)) {
         s_stats.rx_chars++;
         return 1;
