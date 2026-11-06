@@ -136,6 +136,8 @@ static void print_status(void) {
     log_printf("state      : %s (RST=%d)", phy_in_reset() ? "reset" : "active", phy_rst_high());
     log_printf("CLK        : %lu Hz, F/D %u/%u, ETU = %lu us, T=%u", (unsigned long)st->clk_hz,
                pp->f, pp->d, (unsigned long)phy_etu_us(), session_protocol());
+    log_printf("sysclk     : %lu Hz (PIO needs >= %u x CLK)", (unsigned long)st->sys_clk_hz,
+               (unsigned)PHY_MIN_SYSCLK_PER_CLK);
     log_printf("RST edges  : %lu rising, %lu falling; ATR attempts %lu",
                (unsigned long)st->rst_rises, (unsigned long)st->rst_falls,
                (unsigned long)st->atr_attempts);

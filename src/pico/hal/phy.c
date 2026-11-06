@@ -2,6 +2,7 @@
 
 #include "iso7816_pico/config.h"
 
+#include "hardware/clocks.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
 #include "hardware/pio.h"
@@ -21,7 +22,8 @@
 // Generous upper bound for "the clock stopped / reader went away".
 #define TX_CHAR_TIMEOUT_US  200000
 
-// Smallest ETU the PIO loops can follow comfortably at 125 MHz sysclk.
+// Smallest ETU (in clock cycles) the PIO loops can follow; the system clock side of the same limit is
+// PHY_MIN_SYSCLK_PER_CLK in phy.h.
 #define PHY_MIN_ETU_CLKS    8
 #define PHY_MAX_EXTRA_GUARD 20     // frame must fit in one 32-bit FIFO word
 
@@ -302,6 +304,7 @@ void phy_init(void) {
     s_off_tx = pio_add_program(s_pio, &iso7816_tx_program);
     patch_clk_gpio(ISO7816_PIN_CLK);
     clk_counter_init();
+    s_stats.sys_clk_hz = clock_get_hz(clk_sys);   // the state machines run undivided
 
     s_cfg_rx = iso7816_rx_program_get_default_config(s_off_rx);
     sm_config_set_in_pins(&s_cfg_rx, ISO7816_PIN_IO);
@@ -527,10 +530,11 @@ const phy_stats_t *phy_stats(void) { return &s_stats; }
 // ---------------------------------------------------------------------------
 #define SELFTEST_CLK_PIN 16
 #define SELFTEST_IO_PIN  17
-#define SELFTEST_CLK_HZ  (125000000 / 32)
+#define SELFTEST_CLK_DIV 32   // clkgen: system clock cycles per test clock period
 
 void phy_selftest(char *msg, size_t cap) {
     static const uint8_t atr[] = { 0x3B, 0x08, 'P', 'i', 'c', 'o', '7', '8', '1', '6' };
+    const uint32_t selftest_clk_hz = clock_get_hz(clk_sys) / SELFTEST_CLK_DIV;   // 3.9 MHz at 125 MHz
     PIO pio_clk = pio1;
     const uint sm_clk = (uint)pio_claim_unused_sm(pio_clk, true);   // the clock counter holds another one
 
@@ -557,7 +561,7 @@ void phy_selftest(char *msg, size_t cap) {
     patch_clk_gpio(SELFTEST_CLK_PIN);
 
     phy_stats_t saved_stats = s_stats;
-    s_stats = (phy_stats_t){ 0 };
+    s_stats = (phy_stats_t){ .sys_clk_hz = saved_stats.sys_clk_hz };
     s_ignore_reset = true;
 
     phy_params_t p = PHY_PARAMS_DEFAULT;
@@ -613,14 +617,14 @@ void phy_selftest(char *msg, size_t cap) {
              "(expect %lu) | F/D=372/4 inverse: %s, ETU %lld us (expect %lu), echo err %lu | "
              "parity error: %s, line low: %s",
              ok ? "OK" : "FAILED", (unsigned long)s_stats.dbg_delay_us,
-             (unsigned long)((12ull * 2 + 19) * 372 / 2 * 1000000ull / SELFTEST_CLK_HZ),
-             (unsigned long)clk_from_echo, (unsigned long)SELFTEST_CLK_HZ,
+             (unsigned long)((12ull * 2 + 19) * 372 / 2 * 1000000ull / selftest_clk_hz),
+             (unsigned long)clk_from_echo, (unsigned long)selftest_clk_hz,
              (unsigned long)s_stats.tx_echo_errors, (unsigned long)s_stats.dbg_echo_index,
              (unsigned long)s_stats.dbg_echo_expected, (unsigned long)s_stats.dbg_echo_got,
              s_stats.last_error ? s_stats.last_error : "-", (long long)rx_etu, (long long)tx_etu,
-             (unsigned long)(372ull * 1000000ull / SELFTEST_CLK_HZ),
+             (unsigned long)(372ull * 1000000ull / selftest_clk_hz),
              fast_ok ? "OK" : "FAILED", (long long)fast_etu,
-             (unsigned long)(93ull * 1000000ull / SELFTEST_CLK_HZ), (unsigned long)fast_errors,
+             (unsigned long)(93ull * 1000000ull / selftest_clk_hz), (unsigned long)fast_errors,
              perr_ok ? "detected" : "MISSED", perr_low ? "yes" : "NO");
 
     // Put everything back.

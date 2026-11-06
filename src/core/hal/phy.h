@@ -27,6 +27,11 @@ typedef struct {
 
 #define PHY_PARAMS_DEFAULT { 372, 1, false, 0, true, 16 }
 
+// The PIO programs run at the system clock and follow the reader's CLK with `wait gpio`: one CLK period costs up to 4
+// instructions, plus 5 more at every bit boundary, so the system clock must be at least this many times the CLK
+// frequency for the ETU count to stay exact.  125 MHz follows readers up to ~15 MHz, 48 MHz up to ~6 MHz.
+#define PHY_MIN_SYSCLK_PER_CLK 8
+
 typedef struct {
     uint32_t sessions;         // ATRs sent
     uint32_t rx_chars;
@@ -35,6 +40,7 @@ typedef struct {
     uint32_t tx_echo_errors;   // our own character read back differently
     uint32_t tx_timeouts;
     uint32_t clk_hz;           // measured during the last ATR
+    uint32_t sys_clk_hz;       // clock the PIO runs at (0 when unknown, e.g. in the host tests)
     volatile uint32_t rst_rises; // RST rising edges seen (written by the RST interrupt)
     volatile uint32_t rst_falls; // RST falling edges seen (written by the RST interrupt)
     uint32_t atr_attempts;     // phy_start_session() calls

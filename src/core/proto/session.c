@@ -45,6 +45,16 @@ const uint8_t *session_atr(size_t *len) {
 
 uint8_t session_protocol(void) { return s_protocol; }
 
+// The PIO can only count the reader's clock when the system clock is fast enough (phy.h); a port that lowers the
+// system clock to save power must stay above the ratio for the readers it meets.
+static void warn_slow_sysclk(void) {
+    const phy_stats_t *st = phy_stats();
+    if (st->sys_clk_hz && st->clk_hz && st->sys_clk_hz < (uint64_t)PHY_MIN_SYSCLK_PER_CLK * st->clk_hz) {
+        log_printf("WARNING: system clock %lu Hz is below %u x CLK (%lu Hz); the PIO cannot follow this reader",
+                   (unsigned long)st->sys_clk_hz, (unsigned)PHY_MIN_SYSCLK_PER_CLK, (unsigned long)st->clk_hz);
+    }
+}
+
 static void set_protocol_params(phy_params_t *p, uint8_t t) {
     p->error_signal = t == 0;              // character repetition is a T=0 thing
     p->turnaround_etu = t == 0 ? 16 : 22;  // BGT for T=1
@@ -68,10 +78,12 @@ void session_run(void) {
         log_printf("ATR aborted: %s (CLK ~ %lu Hz, echo errors %lu)",
                    st->last_error ? st->last_error : "?", (unsigned long)st->clk_hz,
                    (unsigned long)st->tx_echo_errors);
+        warn_slow_sysclk();
         return;
     }
     log_printf("ATR sent, CLK ~ %lu Hz, T=%u%s", (unsigned long)phy_stats()->clk_hz, s_protocol,
                s_info.specific_mode ? " (specific mode)" : "");
+    warn_slow_sysclk();
 
     // Specific mode has no PPS: the ATR goes out at the default F/D and the parameters it announces apply from the
     // next character on.
