@@ -14,22 +14,29 @@
 #   tools/flash.sh --board pico2    the same in build-pico2/ with -DPICO_BOARD=pico2
 #   tools/flash.sh --no-build       flash the existing UF2 only
 #   tools/flash.sh --no-flash       build only
+#   tools/flash.sh --build-dir build-atr-t1 -DDEMO_ATR=t1
+#                                   another build directory; -D... settings go to cmake (also re-run on an existing one)
 set -euo pipefail
 
 usage() {
-    sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
 }
 
 no_build=0
 no_flash=0
 board=pico
+build_dir=
+cmake_args=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --no-build|-n) no_build=1 ;;
         --no-flash) no_flash=1 ;;
         --board|-b) [ $# -ge 2 ] || { echo "$1 needs a board name" >&2; exit 2; }; board=$2; shift ;;
         --board=*) board=${1#--board=} ;;
+        --build-dir) [ $# -ge 2 ] || { echo "$1 needs a directory" >&2; exit 2; }; build_dir=$2; shift ;;
+        --build-dir=*) build_dir=${1#--build-dir=} ;;
+        -D*) cmake_args+=("$1") ;;
         -h|--help) usage ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
@@ -43,6 +50,11 @@ fi
 root=$(cd "$(dirname "$0")/.." && pwd)
 sdk_root=${PICO_SDK_ROOT:-$HOME/.pico-sdk}
 if [ "$board" = pico ]; then build=$root/build; else build=$root/build-$board; fi
+case "$build_dir" in
+    "") ;;
+    /*) build=$build_dir ;;
+    *) build=$root/$build_dir ;;
+esac
 
 if [ -d "$sdk_root" ]; then
     # Newest installed version of a component (the extension keeps one directory per version).
@@ -81,7 +93,9 @@ echo "SDK ${PICO_SDK_PATH:-?}, board $board, build directory $build"
 
 if [ "$no_build" = 0 ]; then
     if [ ! -f "$build/build.ninja" ]; then
-        cmake -S "$root" -B "$build" -G Ninja -DPICO_BOARD="$board"
+        cmake -S "$root" -B "$build" -G Ninja -DPICO_BOARD="$board" ${cmake_args[@]+"${cmake_args[@]}"}
+    elif [ ${#cmake_args[@]} -gt 0 ]; then
+        cmake -B "$build" "${cmake_args[@]}"
     fi
     ninja -C "$build"
 fi

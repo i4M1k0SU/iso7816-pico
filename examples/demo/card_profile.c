@@ -37,7 +37,7 @@ static const atr_desc_t s_atr_t0 __attribute__((unused)) = {
 };
 
 // T=1 only, with IFSC = 254 and LRC:
-//   3B 88 80 01 50 69 63 6F 37 38 31 36 xx
+//   3B 88 81 31 FE 45 50 69 63 6F 37 38 31 36 xx
 static const atr_desc_t s_atr_t1 __attribute__((unused)) = {
     .levels = 3,
     .level = {
@@ -63,8 +63,13 @@ static const atr_desc_t s_atr_negotiable __attribute__((unused)) = {
 };
 
 // All three were verified with an SCR3310 under Windows (T=0, T=1, and the negotiable one ends up at T=1 with F/D =
-// 372/4 after a PPS).
+// 372/4 after a PPS).  The build can pick one without editing this file: `cmake -DDEMO_ATR=t1` (t0 / t1 / negotiable)
+// defines DEMO_ATR_IN_USE (see CMakeLists.txt; tools/hw_regression.ps1 uses it); otherwise the #define below applies.
+#ifdef DEMO_ATR_IN_USE
+#define ATR_IN_USE DEMO_ATR_IN_USE
+#else
 #define ATR_IN_USE s_atr_t0 // <- pick s_atr_t0 / s_atr_t1 / s_atr_negotiable
+#endif
 
 // ----------------------------------------------------------------------------
 // 2. Persistent data
