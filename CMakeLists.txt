@@ -102,14 +102,29 @@ target_compile_definitions(iso7816_pico_pico PUBLIC
         NVM_IDLE_SAVE_MS=${NVM_IDLE_SAVE_MS}
 )
 target_compile_options(iso7816_pico_pico PRIVATE -Wall -Wextra -Werror)
+# SDK dependencies.  The SDK libraries are INTERFACE libraries whose sources are compiled into whatever links them, so
+# linking them PRIVATE / PUBLIC here would compile ~90 SDK sources into this archive -- with the -Werror above, and
+# again into the application's executable, whose copy is the one actually linked.  Instead they are INTERFACE
+# requirements (the application compiles and links them once, with its own flags) and this library only takes their
+# compile requirements: include directories, definitions and options, read through $<TARGET_PROPERTY:lib,INTERFACE_*>,
+# which CMake evaluates over the transitive dependencies, so the framework's sources are compiled with exactly the
+# configuration a normal link would give them.
+#
 # pico_stdio_usb is a public requirement: the console, the picotool reset interface and the 1200-baud BOOTSEL entry
-# all live in it, and the application's executable must compile it (it is an SDK INTERFACE library).  The framework
-# writes only to the USB driver, so UART stdio is not needed: disable it in the application with
-# pico_enable_stdio_uart(<target> 0), otherwise it claims GP0 / GP1 (GP1 is the default CLK contact).
-target_link_libraries(iso7816_pico_pico
-        PUBLIC iso7816_pico_core pico_stdlib pico_stdio_usb
-        PRIVATE pico_bootrom pico_flash pico_rand hardware_flash hardware_pio hardware_watchdog
+# all live in it.  The framework writes only to the USB driver, so UART stdio is not needed: disable it in the
+# application with pico_enable_stdio_uart(<target> 0), otherwise it claims GP0 / GP1 (GP1 is the default CLK contact).
+set(ISO7816_PICO_SDK_LIBS
+        pico_stdlib pico_stdio_usb
+        pico_bootrom pico_flash pico_rand hardware_flash hardware_pio hardware_watchdog
 )
+target_link_libraries(iso7816_pico_pico PUBLIC iso7816_pico_core INTERFACE ${ISO7816_PICO_SDK_LIBS})
+foreach(lib IN LISTS ISO7816_PICO_SDK_LIBS)
+    target_include_directories(iso7816_pico_pico SYSTEM PRIVATE
+            $<TARGET_PROPERTY:${lib},INTERFACE_SYSTEM_INCLUDE_DIRECTORIES>)
+    target_include_directories(iso7816_pico_pico PRIVATE $<TARGET_PROPERTY:${lib},INTERFACE_INCLUDE_DIRECTORIES>)
+    target_compile_definitions(iso7816_pico_pico PRIVATE $<TARGET_PROPERTY:${lib},INTERFACE_COMPILE_DEFINITIONS>)
+    target_compile_options(iso7816_pico_pico PRIVATE $<TARGET_PROPERTY:${lib},INTERFACE_COMPILE_OPTIONS>)
+endforeach()
 
 if(ISO7816_PICO_BUILD_EXAMPLES)
     add_subdirectory(examples/demo)
