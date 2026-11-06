@@ -245,7 +245,7 @@ ATR や APDU のトレースが流れる。ログは専用リングバッファ�
 
 ```
 === Pico7816 demo 1.0 (e6eabb5) ===
-iso7816-pico 1.0
+--- iso7816-pico 1.0 ---
 commands (type a name and Enter; Enter alone shows this list):
 built-in:
   help     list the commands
