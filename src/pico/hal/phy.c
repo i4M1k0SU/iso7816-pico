@@ -19,6 +19,15 @@
 #define ERROR_SIGNAL_FRAME  0x6u   // bits (LSB first): 0,1,1,0,0,...
 #define ERROR_SIGNAL_LOW_END_ETU 3 // the pulse has ended after this many ETU
 
+// A character popped from the RX FIFO later than this after its push (9.5 ETU) gets no error signal: the pulse would
+// start after the reader's check at 11 +- 0.2 ETU and run into its next character.  In 1/10 ETU.
+#define ERROR_SIGNAL_MAX_LATE_TENTHS 3
+
+// Character repetition, card -> reader (ISO 7816-3 7.3, T=0): the reader answers a character it received with bad
+// parity by driving I/O low from 10.5 ETU for 1..2 ETU; the card checks at 11 ETU and sends the character again at
+// least 2 ETU later.  After this many repetitions of one character the card gives up.
+#define TX_REPEAT_MAX 4
+
 // Generous upper bound for "the clock stopped / reader went away".
 #define TX_CHAR_TIMEOUT_US  200000
 
@@ -79,6 +88,19 @@ static absolute_time_t s_session_t0;
 // (+1 ETU margin).
 static absolute_time_t s_last_rx_time;
 static bool s_last_rx_valid;
+
+// Last time rx_pop() (or phy_tx(), which drains its echoes) saw the RX FIFO empty: a word found afterwards was pushed
+// at most that long ago, which bounds how late an error signal for it would be.
+static absolute_time_t s_rx_empty_seen;
+static bool s_rx_empty_seen_valid;
+
+// End of the last frame we sent (start + 12 + N ETU, estimated from its echo); phy_apply_params() waits for it.
+static absolute_time_t s_tx_end;
+static bool s_tx_end_valid;
+
+static uint32_t s_tx_index;          // characters sent in this session (diagnostic parity injection)
+static uint32_t s_bad_parity_index = UINT32_MAX;
+static uint32_t s_bad_parity_count;
 
 static phy_trace_t s_trace[PHY_TRACE_LEN];
 static size_t s_trace_len;
@@ -158,6 +180,20 @@ uint32_t phy_etu_us(void) {
     uint32_t hz = s_stats.clk_hz ? s_stats.clk_hz : 4000000u;
     uint32_t us = (uint32_t)((uint64_t)s_etu_clks * 1000000ull / hz);
     return us ? us : 1;
+}
+
+// Duration of `tenths` / 10 ETU in microseconds, without the rounding of phy_etu_us() (19.4 us at 372/4, 4.8 MHz).
+static uint64_t etu_tenths_us(uint32_t tenths) {
+    uint32_t hz = s_stats.clk_hz ? s_stats.clk_hz : 4000000u;
+    return ((uint64_t)s_etu_clks * tenths * 100000ull + hz - 1) / hz;
+}
+
+// The same backwards: microseconds -> 1/10 ETU.
+static uint32_t us_to_etu_tenths(int64_t us) {
+    if (us <= 0) return 0;
+    uint32_t hz = s_stats.clk_hz ? s_stats.clk_hz : 4000000u;
+    uint64_t t = (uint64_t)us * hz / ((uint64_t)s_etu_clks * 100000ull);
+    return t > 0xFFFF ? 0xFFFF : (uint32_t)t;
 }
 
 // ---------------------------------------------------------------------------
@@ -272,6 +308,15 @@ static void rx_restart(void) {
     pio_sm_restart(s_pio, s_sm_rx);
     pio_sm_exec(s_pio, s_sm_rx, pio_encode_jmp(s_off_rx));
     pio_sm_set_enabled(s_pio, s_sm_rx, true);
+    s_rx_empty_seen = get_absolute_time();
+    s_rx_empty_seen_valid = true;
+}
+
+// True while the receiver waits for a start bit, i.e. it has not seen a falling edge since its last push (the first
+// two instructions of iso7816_rx: `wait 1 pin`, `wait 0 pin`).
+static inline bool rx_idle(void) {
+    uint pc = pio_sm_get_pc(s_pio, s_sm_rx);
+    return pc == s_off_rx || pc == s_off_rx + 1;
 }
 
 // Reader sent a character with bad parity: emit the error signal so that it repeats the character.  RX is paused
@@ -313,6 +358,9 @@ static void sm_configure(void) {
     s_pio->fdebug = RX_STALL_BIT;   // a stall from before this configuration is not an overrun of this session
     pio_sm_set_enabled(s_pio, s_sm_tx, true);
     pio_sm_set_enabled(s_pio, s_sm_rx, true);
+    s_rx_empty_seen = get_absolute_time();
+    s_rx_empty_seen_valid = true;
+    s_tx_end_valid = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -411,6 +459,7 @@ bool phy_start_session(const phy_params_t *p) {
     s_last_rx_valid = false;
     s_first_echo_valid = false;
     trace_reset();
+    s_tx_index = 0;
     if (!s_ignore_reset) {
         // Diagnostic: hardware count of the reader's clock (0.5 ms window, well inside the 400..40000 clock budget
         // before the ATR has to start).
@@ -428,8 +477,30 @@ bool phy_start_session(const phy_params_t *p) {
     return !phy_reset_pending();
 }
 
+// Stays armed until it has fired: in the current session if that character is still to come, else in the next one
+// (the reader may well reset the card before the session it is meant for).
+void phy_debug_bad_parity(uint32_t index, uint32_t count) {
+    s_bad_parity_index = count ? index : UINT32_MAX;
+    s_bad_parity_count = count;
+}
+
+// Wait until the last frame we sent is over.  phy_tx() returns once the echo of its last character is in (9.5 ETU into
+// the frame; with error_signal after the check at 12 ETU), and stopping the TX state machine earlier freezes the line
+// as it is: a parity bit of 0 would stay driven low until the reconfigured machine releases it.
+static void tx_wait_frame_end(void) {
+    if (!s_tx_end_valid) return;
+    while (!time_reached(s_tx_end)) {}
+    s_tx_end_valid = false;
+}
+
 bool phy_apply_params(const phy_params_t *p) {
     if (!params_valid(p)) return false;
+    tx_wait_frame_end();
+    if ((uint32_t)p->f / p->d == s_etu_clks && 12u + p->extra_guard == s_frame_bits) {
+        // Same timing: protocol, convention and error signal are only used by the CPU, the state machines run on.
+        s_params = *p;
+        return true;
+    }
     pio_sm_set_enabled(s_pio, s_sm_rx, false);
     pio_sm_set_enabled(s_pio, s_sm_tx, false);
     pio_sm_clear_fifos(s_pio, s_sm_rx);
@@ -443,18 +514,36 @@ bool phy_apply_params(const phy_params_t *p) {
 // Pop one raw RX word and validate parity. Returns:
 //   1  valid byte
 //   0  nothing available
-//  -1  parity error (error signal already sent)
+//  -1  parity error (error signal already sent, unless the word was picked up too late for it)
+//
+// The error signal is timed from the pop, so it is only on time if the word is picked up right after its push.  The
+// push is somewhere between the last time the FIFO was seen empty and now; if that window (or a second word behind
+// this one) says the word may have waited longer than ERROR_SIGNAL_MAX_LATE_TENTHS, the error signal is skipped: the
+// character is dropped either way and a late pulse would hit the reader's next character instead.
 static int rx_pop(uint8_t *byte) {
     rx_check_overrun();
-    if (pio_sm_is_rx_fifo_empty(s_pio, s_sm_rx)) return 0;
+    uint level = pio_sm_get_rx_fifo_level(s_pio, s_sm_rx);
+    absolute_time_t now = get_absolute_time();
+    if (!level) {
+        s_rx_empty_seen = now;
+        s_rx_empty_seen_valid = true;
+        return 0;
+    }
     uint32_t w = pio_sm_get(s_pio, s_sm_rx);
     uint8_t b = decode_byte(w);
+    int64_t waited = s_rx_empty_seen_valid ? absolute_time_diff_us(s_rx_empty_seen, now) : INT32_MAX;
+    if (level > 1) waited = INT32_MAX;               // the one behind arrived >= 12 ETU after this one
+    if (waited < INT32_MAX && (uint64_t)waited > s_stats.rx_max_latency_us) {
+        s_stats.rx_max_latency_us = (uint32_t)waited;
+    }
+    bool late = (uint64_t)waited > etu_tenths_us(ERROR_SIGNAL_MAX_LATE_TENTHS);
+    if (late) s_stats.rx_late++;
     trace_add('R', (uint16_t)(w & 0x1FF));
-    s_last_rx_time = get_absolute_time();
+    s_last_rx_time = now;
     s_last_rx_valid = true;
     if (!parity_ok(w, b)) {
         s_stats.rx_parity_errors++;
-        if (s_params.error_signal) send_error_signal();
+        if (s_params.error_signal && !late) send_error_signal();
         return -1;
     }
     *byte = b;
@@ -488,65 +577,75 @@ int phy_rx_timeout(uint8_t *byte, uint32_t timeout_us) {
     }
 }
 
-bool phy_tx(const uint8_t *data, size_t len) {
-    size_t pushed = 0, echoed = 0;
-    bool mismatch_logged = false;
+// Frame for the next character, with the diagnostic parity flip applied (phy_debug_bad_parity()).
+static uint32_t next_frame(uint8_t b) {
+    uint32_t frame = make_frame(b);
+    if (s_tx_index == s_bad_parity_index && s_bad_parity_count) {
+        s_bad_parity_count--;
+        frame ^= 1u << 9;
+        trace_add('P', b);
+    } else {
+        trace_add('T', b);
+    }
+    return frame;
+}
 
-    // Character turnaround: do not start before `turnaround_etu` (+1 margin) after the leading edge of the last
-    // character the reader sent (its push came at 9.5 ETU).
-    if (s_last_rx_valid) {
-        uint32_t wait_tenths = (uint32_t)s_params.turnaround_etu * 10 + 10;
-        wait_tenths = wait_tenths > 95 ? wait_tenths - 95 : 0;
-        absolute_time_t earliest =
-            delayed_by_us(s_last_rx_time, (uint64_t)phy_etu_us() * wait_tenths / 10);
-        while (!time_reached(earliest)) {
-            if (phy_reset_pending()) {
-                s_stats.last_error = "tx: reset asserted";
-                return false;
-            }
+// Our own characters come back through the receiver; use them as completion signal and as a check that nobody fought
+// us for the line.  `frame` is what was sent (a deliberately wrong parity bit is not an echo error).
+static void tx_echo(uint32_t w, size_t index, uint8_t b, uint32_t frame, bool *mismatch_logged) {
+    absolute_time_t now = get_absolute_time();
+    trace_add('R', (uint16_t)(w & 0x1FF));
+    if (!s_first_echo_valid) {
+        s_first_echo_time = now;
+        s_first_echo_valid = true;
+        // First ATR character: echoed (frame + 9.5) ETU after the session start, a decent estimate of the clock if the
+        // clock counter could not be used.
+        int64_t dt = absolute_time_diff_us(s_session_t0, s_first_echo_time);
+        s_stats.dbg_delay_us = (uint32_t)dt;
+        if (dt > 0 && !s_stats.dbg_clk_counted_hz) {
+            s_stats.clk_hz = (uint32_t)(((2ull * s_frame_bits + 19) * s_etu_clks / 2) * 1000000ull / (uint64_t)dt);
         }
     }
+    if (index < 2) s_echo_times[index] = now;
+    // The echo pushes 9.5 ETU into the frame; the frame ends 12 + N ETU after its start.
+    s_tx_end = delayed_by_us(now, etu_tenths_us(s_frame_bits * 10 - 95));
+    s_tx_end_valid = true;
+    if ((w & 0x1FF) != (~frame >> 1 & 0x1FF)) {   // frame bit 1 = line low
+        s_stats.tx_echo_errors++;
+        if (!*mismatch_logged) {
+            *mismatch_logged = true;
+            s_stats.dbg_echo_index = index;
+            s_stats.dbg_echo_expected = b;
+            s_stats.dbg_echo_got = w & 0x1FF;
+        }
+    }
+}
 
+static bool tx_abort(const char *why) {
+    s_stats.last_error = why;
+    s_bad_parity_count = 0;   // a diagnostic injection does not outlive the transfer it broke
+    return false;
+}
+
+// T=1 (no error signal): stream the characters through the TX FIFO, back to back.
+static bool tx_stream(const uint8_t *data, size_t len) {
+    size_t pushed = 0, echoed = 0;
+    bool mismatch_logged = false;
+    uint32_t frames[8];   // the TX FIFO is 8 deep, so at most 8 frames are in flight
     absolute_time_t deadline = make_timeout_time_us(TX_CHAR_TIMEOUT_US);
-    s_tx_start = get_absolute_time();
 
     while (echoed < len) {
         watchdog_update();
         bool progressed = false;
-        while (pushed < len && !pio_sm_is_tx_fifo_full(s_pio, s_sm_tx)) {
-            pio_sm_put(s_pio, s_sm_tx, make_frame(data[pushed]));
-            trace_add('T', data[pushed]);
+        while (pushed < len && !pio_sm_is_tx_fifo_full(s_pio, s_sm_tx) && pushed - echoed < 8) {
+            frames[pushed % 8] = next_frame(data[pushed]);
+            pio_sm_put(s_pio, s_sm_tx, frames[pushed % 8]);
+            s_tx_index++;
             pushed++;
             progressed = true;
         }
-        // Our own characters come back through the receiver; use them as completion signal and as a check that nobody
-        // fought us for the line.
-        while (echoed < len && !pio_sm_is_rx_fifo_empty(s_pio, s_sm_rx)) {
-            uint32_t w = pio_sm_get(s_pio, s_sm_rx);
-            uint8_t b = decode_byte(w);
-            trace_add('R', (uint16_t)(w & 0x1FF));
-            if (!s_first_echo_valid) {
-                s_first_echo_time = get_absolute_time();
-                s_first_echo_valid = true;
-                // First ATR character: echoed (frame + 9.5) ETU after the session start, a decent estimate of the clock
-                // if the clock counter could not be used.
-                int64_t dt = absolute_time_diff_us(s_session_t0, s_first_echo_time);
-                s_stats.dbg_delay_us = (uint32_t)dt;
-                if (dt > 0 && !s_stats.dbg_clk_counted_hz) {
-                    s_stats.clk_hz = (uint32_t)(((2ull * s_frame_bits + 19) * s_etu_clks / 2) *
-                                                1000000ull / (uint64_t)dt);
-                }
-            }
-            if (echoed < 2) s_echo_times[echoed] = get_absolute_time();
-            if (b != data[echoed] || !parity_ok(w, b)) {
-                s_stats.tx_echo_errors++;
-                if (!mismatch_logged) {
-                    mismatch_logged = true;
-                    s_stats.dbg_echo_index = echoed;
-                    s_stats.dbg_echo_expected = data[echoed];
-                    s_stats.dbg_echo_got = w & 0x1FF;
-                }
-            }
+        while (echoed < pushed && !pio_sm_is_rx_fifo_empty(s_pio, s_sm_rx)) {
+            tx_echo(pio_sm_get(s_pio, s_sm_rx), echoed, data[echoed], frames[echoed % 8], &mismatch_logged);
             echoed++;
             progressed = true;
         }
@@ -554,16 +653,102 @@ bool phy_tx(const uint8_t *data, size_t len) {
             deadline = make_timeout_time_us(TX_CHAR_TIMEOUT_US);
         } else if (time_reached(deadline)) {
             s_stats.tx_timeouts++;
-            s_stats.last_error = "tx: no echo (clock stopped?)";
-            return false;
+            return tx_abort("tx: no echo (clock stopped?)");
         }
-        if (phy_reset_pending()) {
-            s_stats.last_error = "tx: reset asserted";
-            return false;
+        if (phy_reset_pending()) return tx_abort("tx: reset asserted");
+    }
+    if (mismatch_logged) {
+        // Somebody else drove the line: a stray word may still follow and would pass for the reader's next byte.
+        tx_wait_frame_end();
+        rx_restart();
+    }
+    return true;
+}
+
+// T=0: one character at a time, each checked for the reader's error signal and repeated if it came.
+//
+// After the echo (9.5 ETU) the line is watched until 12 ETU: the error signal starts at 10.5 +- 0.2 ETU and lasts at
+// least 1 ETU.  The CPU's polling gives its timing for the trace, the receiver makes the check independent of the
+// polling: it waits for a start bit after the echo, and a falling edge in the guard time moves it out of that wait
+// for the next 9.5 ETU (until it would push a bogus word), so a check of its program counter anywhere in that time
+// catches the signal even if an interrupt delayed the CPU.  The receiver is then restarted, which drops the half-read
+// bogus character, and the character goes out again at least 2 ETU after the line came back high.
+static bool tx_repeating(const uint8_t *data, size_t len) {
+    bool mismatch_logged = false;
+    for (size_t i = 0; i < len; i++) {
+        for (unsigned attempt = 0;; attempt++) {
+            uint32_t frame = next_frame(data[i]);
+            pio_sm_put(s_pio, s_sm_tx, frame);   // the TX FIFO is empty: every frame waits for its echo
+
+            absolute_time_t deadline = make_timeout_time_us(TX_CHAR_TIMEOUT_US);
+            while (pio_sm_is_rx_fifo_empty(s_pio, s_sm_rx)) {
+                watchdog_update();
+                if (phy_reset_pending()) return tx_abort("tx: reset asserted");
+                if (time_reached(deadline)) {
+                    s_stats.tx_timeouts++;
+                    return tx_abort("tx: no echo (clock stopped?)");
+                }
+            }
+            tx_echo(pio_sm_get(s_pio, s_sm_rx), i, data[i], frame, &mismatch_logged);
+            absolute_time_t echo = get_absolute_time();
+
+            // Watch 10.1 .. 12 ETU (our own parity bit may hold the line low until 10).
+            absolute_time_t from = delayed_by_us(echo, etu_tenths_us(6));
+            absolute_time_t until = delayed_by_us(echo, etu_tenths_us(25));
+            absolute_time_t low_at = nil_time, high_at = nil_time;
+            while (!time_reached(until)) {
+                bool high = gpio_get(s_io_gpio);
+                if (is_nil_time(low_at)) {
+                    if (!high && time_reached(from)) low_at = get_absolute_time();
+                } else if (high && is_nil_time(high_at)) {
+                    high_at = get_absolute_time();
+                }
+            }
+            if (rx_idle() && pio_sm_is_rx_fifo_empty(s_pio, s_sm_rx)) break;   // accepted
+
+            // Error signal (or something else pulled the line low after our character).
+            if (is_nil_time(high_at)) {
+                absolute_time_t stuck = delayed_by_us(get_absolute_time(), etu_tenths_us(100));
+                while (!gpio_get(s_io_gpio)) {
+                    if (phy_reset_pending()) return tx_abort("tx: reset asserted");
+                    if (time_reached(stuck)) return tx_abort("tx: I/O held low after our character");
+                }
+                high_at = get_absolute_time();
+            }
+            trace_add('E', is_nil_time(low_at) ? 0 : (uint16_t)(95 + us_to_etu_tenths(absolute_time_diff_us(echo,
+                                                                                                    low_at))));
+            trace_add('e', (uint16_t)(95 + us_to_etu_tenths(absolute_time_diff_us(echo, high_at))));
+            // Repeat at least 2 ETU after the line came back high (and so after the detection).
+            busy_wait_until(delayed_by_us(high_at, etu_tenths_us(20)));
+            rx_restart();
+            if (attempt >= TX_REPEAT_MAX) return tx_abort("tx: character rejected by the reader (error signal)");
+            s_stats.tx_repeats++;
+        }
+        s_tx_index++;
+    }
+    return true;
+}
+
+bool phy_tx(const uint8_t *data, size_t len) {
+    // Character turnaround: do not start before `turnaround_etu` (+1 margin) after the leading edge of the last
+    // character the reader sent (its push came at 9.5 ETU).
+    if (s_last_rx_valid) {
+        uint32_t wait_tenths = (uint32_t)s_params.turnaround_etu * 10 + 10;
+        wait_tenths = wait_tenths > 95 ? wait_tenths - 95 : 0;
+        absolute_time_t earliest = delayed_by_us(s_last_rx_time, etu_tenths_us(wait_tenths));
+        while (!time_reached(earliest)) {
+            if (phy_reset_pending()) return tx_abort("tx: reset asserted");
         }
     }
+
+    s_tx_start = get_absolute_time();
+    bool ok = s_params.error_signal ? tx_repeating(data, len) : tx_stream(data, len);
+    if (!ok) return false;
     s_stats.tx_chars += len;
     s_last_rx_valid = false;   // next turnaround is reader -> card, no wait needed
+    // All echoes are in, so the FIFO is empty now: the next rx_pop() measures its latency from here.
+    s_rx_empty_seen = get_absolute_time();
+    s_rx_empty_seen_valid = true;
     return true;
 }
 
@@ -619,12 +804,15 @@ void phy_selftest(char *msg, size_t cap) {
     bool ok = phy_start_session(&p) && phy_tx(atr, sizeof atr);
     uint32_t clk_from_echo = s_stats.clk_hz;
 
-    // Pure timing probe: two more characters pushed while the last ATR frame is still running out its guard bits.  push
-    // -> 1st echo = 2.5 + 9.5 ETU, 1st -> 2nd echo = 12 ETU: both measure the ETU.
+    // Pure timing probe: two more characters streamed (T=1 style, no error signal check) after the ATR, whose
+    // character-by-character T=0 transmission returns once the last frame is over.  push -> 1st echo = 9.5 ETU, 1st ->
+    // 2nd echo = 12 ETU: both measure the ETU.
     static const uint8_t probe_bytes[2] = { 0x55, 0xAA };
     int64_t rx_etu = -1, tx_etu = -1;
-    if (ok && phy_tx(probe_bytes, 2)) {
-        rx_etu = absolute_time_diff_us(s_tx_start, s_echo_times[0]) / 12;
+    phy_params_t stream = p;
+    stream.error_signal = false;
+    if (ok && phy_apply_params(&stream) && phy_tx(probe_bytes, 2)) {
+        rx_etu = absolute_time_diff_us(s_tx_start, s_echo_times[0]) * 2 / 19;
         tx_etu = absolute_time_diff_us(s_echo_times[0], s_echo_times[1]) / 12;
     }
 

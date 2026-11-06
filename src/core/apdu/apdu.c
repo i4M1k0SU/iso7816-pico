@@ -35,6 +35,7 @@ bool apdu_decode(const uint8_t *buf, size_t len, apdu_t *out) {
     out->le = 0;
     out->le_present = false;
     out->extended = false;
+    out->applet = NULL;
 
     if (len == 4) return true;                                   // case 1
     if (len == 5) {                                              // case 2S

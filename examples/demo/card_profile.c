@@ -70,9 +70,15 @@ static const atr_desc_t s_atr_negotiable __attribute__((unused)) = {
 // 2. Persistent data
 //
 // Everything in this struct survives power cycles: it is loaded from flash at boot and written back when the card is
-// idle after something changed (UPDATE BINARY, ...); PIN / PUK counters are saved at once on every try.  Changing the
-// struct size discards the stored image (back to these defaults).
+// idle after something changed (UPDATE BINARY, ...); PIN / PUK counters are saved at once on every try.
+//
+// Bump NVM_VERSION whenever this struct changes (members, sizes, meaning): the flash image written by the previous
+// firmware is then not reinterpreted.  Without hooks.nvm_migrate the card starts from these defaults (once, logged);
+// with it, the hook can carry the old data over (see card.h).  A size change alone is caught too, but a change that
+// keeps the size is not: that is what the version is for.
 // ----------------------------------------------------------------------------
+
+#define NVM_VERSION 0
 
 #define EF_HELLO_SIZE 256
 
@@ -248,12 +254,13 @@ const card_profile_t demo_card_profile = {
         .get_data = hook_get_data,
         .internal_authenticate = hook_internal_authenticate,
         .external_authenticate = hook_external_authenticate,
-        // .sm_unwrap / .sm_wrap / .perform_security_operation / ... : see card.h
+        // .sm_unwrap / .sm_wrap / .perform_security_operation / .nvm_migrate / ... : see card.h
     },
 
     // persistence
     .nvm_blob = &s_nvm,
     .nvm_size = sizeof s_nvm,
+    .nvm_version = NVM_VERSION,
 
     // console
     .console_cmds = s_console_cmds,

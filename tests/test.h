@@ -60,4 +60,5 @@ void test_fs(void);
 void test_fs_sec(void);
 void test_nvm(void);
 void test_nvm_pin_durability(void);
+void test_nvm_layout(void);
 void test_card_suite(void);

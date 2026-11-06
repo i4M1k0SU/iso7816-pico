@@ -211,7 +211,7 @@ bool fs_record_append(const fs_file_t *ef, const uint8_t *in, uint16_t len, uint
 
 void fs_put_fcp(apdu_resp_t *resp, const fs_file_t *f, uint8_t template_tag) {
     uint8_t body[64];
-    apdu_resp_t b = { body, sizeof body, 0 };
+    apdu_resp_t b = APDU_RESP_INIT(body, sizeof body);
     uint8_t tmp[8];
 
     if (template_tag != 0x64) {
@@ -249,6 +249,7 @@ void fs_put_fcp(apdu_resp_t *resp, const fs_file_t *f, uint8_t template_tag) {
         }
     }
     resp_put_tlv(resp, template_tag, body, b.len);
+    if (b.overflow) resp->overflow = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -385,6 +386,9 @@ uint16_t fs_cmd_read_binary(const apdu_t *cmd, apdu_resp_t *resp) {
     uint32_t n = ef->size - off;
     uint32_t le = cmd->le ? cmd->le : 256;
     if (n > le) n = le;
+    // Le is a maximum: an extended Le larger than the response buffer (e.g. 65536, "as much as possible") gets what
+    // fits, which is a complete answer, not an overflow.
+    if (n > resp->cap - resp->len) n = resp->cap - resp->len;
     resp_put(resp, ef->data + off, n);
     return SW_OK;
 }

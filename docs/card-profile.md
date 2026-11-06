@@ -50,16 +50,61 @@ RST Low だけを書き戻しの契機にしないのは次の理由による。
 アイドル時保存の代償として、書き込み中の 50-100 ms は割り込みが止まり CPU も塞がる。T=0 ではリーダーはカードの応答を
 待ってから送るので問題にならないが、T=1 ではその間に届いたブロックが 8 段の PIO 受信 FIFO からあふれることがある。
 その場合リーダーは誤ったブロックまたは無応答として扱い、再送 (R ブロック) で回復するので、失うのは時間だけである。
-EF の本体や `sec_pin_t` の配列はこの構造体の中に置く。構造体のサイズが変わると保存済みイメージは捨てられ、
-ソース上の初期値に戻る (コンソールの `erase` でも初期化できる)。
+EF の本体や `sec_pin_t` の配列はこの構造体の中に置く。コンソールの `erase` で消去すると、次の起動からソース上の初期値に
+戻る。
+
+### レイアウト版
+
+フラッシュ上のイメージには、それを書いたファームウェアのレイアウト ID が記録される。レイアウト ID は
+`NVM_LAYOUT_FRAMEWORK << 16 | .nvm_version` である。
+
+* `.nvm_version` (`uint16_t`、既定 0) はアプリケーションの構造体の版である。構造体のメンバ、大きさ、意味を変えたら
+  上げる。サイズが変わる変更はサイズでも検出されるが、サイズが同じ変更は版を上げなければ検出されない。
+* `NVM_LAYOUT_FRAMEWORK` (`src/core/hal/nvm.h`) はフレームワークが構造体の中に置かせている型 (`sec_pin_t`) の版である。
+  `sec_pin_t` (`SEC_PIN_MAX_LEN` を含む) を変えるときはフレームワーク側でこれを上げる。
+* 起動時は、どのレイアウトとサイズのものも含めて、通し番号が最大で CRC の正しいイメージを探す。レイアウト ID と
+  サイズがこのファームウェアと一致すればそれを読み込む。一致しなければ、そのイメージを今の構造体として解釈することは
+  しない。`hooks.nvm_migrate` があればそれに渡し、真を返せばフックが `.nvm_blob` に書いた内容を使う。フックがない、
+  または偽を返した場合は初期値のまま起動する。どちらの場合も両方のレイアウト ID をログに出し、blob を dirty にするので、
+  最初のアイドル時 (または RST Low) に新しいレイアウトで保存され、次の起動からは普通に読み込まれる。それより古い、
+  レイアウトの一致するイメージが残っていても、古い内容なので使わない。
+
+  ```text
+  NVM: stored image has layout 00000000 (560 bytes), firmware expects 00010000 (560 bytes): no nvm_migrate hook, using defaults
+  NVM: defaults (560 bytes, slot 3/16, seq 41)
+  ```
+
+* `hooks.nvm_migrate(uint32_t old_layout, const void *old_blob, size_t old_size)` の `old_blob` はフラッシュ上の
+  古いイメージ (読み出し専用、8 バイト境界) で、呼ばれた時点の `.nvm_blob` は初期値である。残せるものを `.nvm_blob` に
+  移して真を返す。偽を返すときは `.nvm_blob` に触れない。ファイルシステムと PIN の初期化より前、起動時に 1 度だけ
+  呼ばれる。
+
+  ```c
+  static bool my_nvm_migrate(uint32_t old_layout, const void *old_blob, size_t old_size) {
+      if ((old_layout & 0xFFFF0000u) != ((uint32_t)NVM_LAYOUT_FRAMEWORK << 16)) return false;  // PIN の形式が違う
+      if ((old_layout & 0xFFFF) != 1 || old_size != sizeof(nvm_v1_t)) return false;
+      const nvm_v1_t *old = old_blob;
+      memcpy(s_nvm.ef_hello, old->ef_hello, sizeof old->ef_hello);   // 新しいメンバは初期値のまま
+      memcpy(s_nvm.pins, old->pins, sizeof old->pins);
+      return true;
+  }
+  ```
+
+  `NVM_LAYOUT_FRAMEWORK` を使うには `hal/nvm.h` を include する (`src/core` はインクルードパスに入っている)。
+* 版の古いファームウェアに戻した場合も同じ規則で、新しいレイアウトのイメージは使われず、初期値で上書きされる。
+* レイアウト ID を持たない旧形式のヘッダ (この変更より前のファームウェアが書いたもの) はレイアウト 0 として扱う。
+  したがって既存のカードは、この変更を含むファームウェアを書き込んだ最初の起動で 1 度だけ初期値に戻る
+  (`nvm_migrate` を用意すれば `old_layout == 0` のイメージから引き継げる)。
 
 書き戻しは次の規則で行う (`src/core/hal/nvm.c`)。
 
 * フラッシュ上のイメージと同じ内容なら書かない。
 * 領域 (`NVM_FLASH_BYTES`、既定 64 KB) をスロット (ヘッダ + 構造体を 4 KB 単位に切り上げ) に分け、通し番号を付けて順繰りに書く。
   消去するのは次のスロットだけなので、各セクタの消去回数はスロット数分の 1 になる (構造体が 4 KB 未満なら 16 分の 1)。
-* 起動時は通し番号が最大で CRC の正しいスロットを採用する。書き込み中に電源が落ちても直前のイメージが残る。
-* そのためにはスロットが 2 つ以上必要である。1 つしか取れない大きさ (既定の 64 KB なら 32 752 バイトを超える構造体) では
+* 起動時は通し番号が最大で CRC の正しいスロットを採用する (レイアウトが違えば上の「レイアウト版」のとおり)。書き込み中に
+  電源が落ちても直前のイメージが残る。ヘッダ (24 バイト) は magic、サイズ、通し番号、CRC-32 (構造体のみ)、レイアウト ID
+  からなる。
+* そのためにはスロットが 2 つ以上必要である。1 つしか取れない大きさ (既定の 64 KB なら 32 744 バイトを超える構造体) では
   保存のたびに唯一のイメージを消してから書くことになるので、`nvm_load()` / `nvm_save()` は拒否し (保存されない)、
   起動時にその旨をログに出す。`_Static_assert(NVM_BLOB_FITS(sizeof(nvm_data_t)), "...")` (デモにある) でビルド時に検査できる。
   大きな構造体には `NVM_FLASH_BYTES` を増やす。
@@ -144,17 +189,46 @@ static const apdu_cmd_desc_t s_cmds[] = {
     APDU_CMD(0x80, 0xF0, 0x20, APDU_CASE4, "ECHO",         h_echo),
 };
 const applet_t my_applet = {
-    .name = "demo", .aid = s_aid, .aid_len = sizeof s_aid,
+    .name = "demo", .aid = s_aid, .aid_len = sizeof s_aid,   // AID は 1..16 バイト
+    .ctx = NULL,         // アプリケーション用 (インスタンスの状態など)。フレームワークは触れない
     .cmds = s_cmds, .n_cmds = 2,
     .select = NULL,      // NULL なら 6F len { 84 len AID } を返す
+    .deselect = NULL,    // void (*)(const applet_t *self, uint8_t channel)
     .process = NULL,     // 表にないコマンドの受け皿 (switch で書く場合)。APDU_UNHANDLED を返すと次の層へ
     .classify = NULL,    // process で扱うコマンドの T=0 case (switch で書く場合は必須)
-    .reset = NULL,       // ATR ごとの初期化
+    .reset = NULL,       // ATR ごとの初期化: void (*)(const applet_t *self)
 };
 ```
 
 * ハンドラは `uint16_t handler(const apdu_t *cmd, apdu_resp_t *resp)`。`cmd->data/lc/le/channel` を読み、
   `resp_put()` / `resp_put_tlv()` で応答データを積み、SW を返す。
+* `cmd->applet` は、ディスパッチャがコマンドを受け取った時点で CLA が指すチャネルで選択されていたアプレットである
+  (なければ NULL)。表のハンドラ、`process`、`select`、標準コマンド、すべてのフック (`sm_unwrap` / `sm_wrap` を含む) に
+  渡る `cmd` で設定済みである。`select` の中では選択されようとしているアプレット自身を指す。`reset`、`deselect`、
+  `classify` は第 1 引数 `self` で自分を受け取る。1 つの実装で複数の AID (インスタンス) を扱うときは、インスタンスごとに
+  `applet_t` を作り、状態を `.ctx` に置いて `cmd->applet->ctx` / `self->ctx` で引く。
+
+  ```c
+  typedef struct { uint32_t counter; } inst_t;
+  static inst_t s_inst1, s_inst2;
+  static uint16_t h_count(const apdu_t *cmd, apdu_resp_t *resp) {
+      inst_t *in = cmd->applet->ctx;
+      in->counter++;
+      resp_put_u8(resp, (uint8_t)in->counter);
+      return SW_OK;
+  }
+  static void inst_reset(const applet_t *self) { ((inst_t *)self->ctx)->counter = 0; }
+  const applet_t app1 = { .name = "app1", .aid = s_aid1, .aid_len = 6, .ctx = &s_inst1, .cmds = s_cmds, .n_cmds = 1,
+                          .reset = inst_reset };
+  const applet_t app2 = { .name = "app2", .aid = s_aid2, .aid_len = 6, .ctx = &s_inst2, .cmds = s_cmds, .n_cmds = 1,
+                          .reset = inst_reset };
+  ```
+* 応答バッファは `APDU_BUF_SIZE` (既定 4096) バイトである。`resp_put*()` は入りきらない分を捨て、`resp->overflow` を
+  立てる (立ったままになる)。ハンドラが 9000 / 61xx / 62xx / 63xx を返したときに `overflow` が立っていれば、
+  ディスパッチャは不完全な応答を送らず、データなしの 6F00 に置き換えて `<コマンド名>: response overflow (cap 4096)` を
+  ログに出す。`select` の FCI があふれた場合は選択不成立 (6F00) になる。大きな応答を組み立てる前に
+  `resp->cap - resp->len` で残りを確かめる。READ BINARY は拡張 Le がバッファより大きければ入るだけ返す
+  (あふれではない)。
 * **T=0 の case** を表に書くのは、T=0 ではヘッダだけから P3 が Lc か Le か判断できないためである。
   61xx / 6Cxx / GET RESPONSE / 再発行時の応答保持 (コマンドを 2 回実行しない) はフレームワークが行う。
   T=1 と拡張長 APDU では case は自動判定である。
@@ -164,7 +238,7 @@ const applet_t my_applet = {
   自分のコマンドでなければ `APDU_CASE_UNKNOWN` を返す。
 
   ```c
-  static apdu_case_t my_classify(uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2) {
+  static apdu_case_t my_classify(const applet_t *self, uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2) {
       if ((cla & 0xF0) != 0x80) return APDU_CASE_UNKNOWN;
       switch (ins) {
       case 0x42: return APDU_CASE3;   // データを受け取る
@@ -208,6 +282,8 @@ const applet_t my_applet = {
 | `manage_security_environment`, `perform_security_operation`, `generate_asymmetric_key_pair` | 00 22 / 00 2A / 00 46 (ISO 7816-8) | 6A81 |
 | `create_file`, `delete_file` | 00 E0 / 00 E4 (ISO 7816-9) | 6A81 |
 | `sm_unwrap`, `sm_wrap` | CLA のセキュアメッセージング bit が立ったコマンドの前後 | 6882 |
+| `pin_transform` | PIN / PUK の保存前と照合前の変換 (「PIN」の節) | 平文のまま |
+| `nvm_migrate` | 起動時、フラッシュのイメージのレイアウト ID かサイズが違うとき (「レイアウト版」) | 初期値 |
 | `random_bytes` | GET CHALLENGE 等 | RP2040 / RP2350 のハードウェア乱数 |
 
 暗号が必要なら pico-sdk 同梱の mbedtls (`pico_mbedtls`) をリンクしてフックの中で使用する。
@@ -227,7 +303,7 @@ const applet_t my_applet = {
 USB シリアルコンソールに独自のコマンドを足せる。`console_cmd_t` の表 (名前、`help` で表示する説明、ハンドラ) を
 `.console_cmds` / `.n_console_cmds` に登録する。コンソールは「名前 引数...」の 1 行を Enter で受け取り、名前が一致した
 ハンドラに残りの文字列 (前後の空白を除いたもの、無ければ空文字列) を渡す。出力は `log_printf()` (`iso7816_pico/log.h`) で行う。
-フレームワーク自身の名前 (help status card trace gpio pins apdu save erase bootsel reboot) が優先される。
+フレームワーク自身の名前 (help status card trace txperr gpio pins apdu save erase bootsel reboot) が優先される。
 `help` (または空行の Enter) は組み込みコマンドを `built-in:`、プロファイルのコマンドを `.name` (カード名) の見出しの下に
 分けて表示する。
 ハンドラはアイドルループ、すなわちコマンドの合間やリーダー待ちの間に呼ばれるので、長く回る処理では
@@ -251,10 +327,28 @@ static const console_cmd_t s_console_cmds[] = {
 
 | 関数 | 用途 |
 |------|------|
-| `resp_put`, `resp_put_u8`, `resp_put_tlv` | 応答データの追加 (バッファ上限 `APDU_BUF_SIZE` で切り詰める) |
+| `resp_put`, `resp_put_u8`, `resp_put_tlv` | 応答データの追加 (入りきらない分は捨てて `overflow` を立てる。成功 SW なら 6F00 になる) |
+| `APDU_RESP_INIT(buf, cap)`, `resp_reset()` | 自前の `apdu_resp_t` の初期化 / 空に戻す (`overflow` も消す) |
 | `card_keepalive()` | 時間のかかる処理中にリーダーを待たせる (T=0: NULL バイト 60、T=1: S(WTX)) |
 | `card_nvm_changed()` | 永続データを変更したのでアイドル時 (または RST Low) に保存する |
 | `card_request_bootsel()` | 応答送出後に BOOTSEL へ再起動する |
-| `card_put_default_fci()` | 6F { 84 AID } 形式の FCI |
+| `card_put_default_fci()` | 6F { 84 AID } 形式の FCI (AID が 16 バイトを超えればログに出し `overflow` を立てる) |
 | `fs_cursor`, `fs_child`, `fs_by_name`, `fs_by_sfi`, `fs_select_file`, `fs_record_*`, `fs_put_fcp` | ファイルシステム操作 |
 | `sec_find`, `sec_is_verified`, `sec_set_verified`, `sec_last_challenge`, `sec_random` | セキュリティ状態 |
+
+## 非互換変更: アプレット文脈、応答あふれ、NVM レイアウト版
+
+公開 API を利用者が使い始める前に、1 度だけ互換性のない変更をまとめて行った。それ以前のプロファイルとアプレットは
+次のとおり直す。
+
+| 変更 | 利用側で必要な対応 |
+|------|------------------|
+| `applet_t.reset` が `void (*)(const applet_t *self)` になった | 引数 `self` を受け取る (使わなければ `(void)self;`) |
+| `applet_t.deselect` が `void (*)(const applet_t *self, uint8_t channel)` になった | 第 1 引数 `self` を足す |
+| `applet_t.classify` が `apdu_case_t (*)(const applet_t *self, uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2)` になった | 第 1 引数 `self` を足す (`hooks.classify` は変わらない) |
+| `apdu_t` に `const struct applet *applet`、`applet_t` に `void *ctx` が増えた | 不要 (指示付き初期化子なら 0 / NULL になる) |
+| `apdu_resp_t` に `bool overflow` が増えた | `{ buf, cap, 0 }` のような位置指定の初期化子は `APDU_RESP_INIT(buf, cap)` に置き換える (`-Wextra` で警告になる) |
+| 入りきらない応答は 9000 ではなく 6F00 (データなし) になる | 大きな応答は `resp->cap - resp->len` を確かめて組み立てる |
+| 17 バイト以上の AID の既定 FCI は 6F00 になる | AID を 16 バイト以内にする |
+| `card_profile_t.nvm_version` と `hooks.nvm_migrate` が増え、NVM のヘッダが 24 バイトになった | 構造体を変えるたびに `nvm_version` を上げる。引き継ぎたければ `nvm_migrate` を書く |
+| 旧形式の NVM イメージはレイアウト 0 として扱う | 既存のカードは書き換え後の最初の起動で 1 度だけ初期値に戻る (`nvm_migrate` で `old_layout == 0` から引き継げる) |

@@ -21,7 +21,7 @@ static uint16_t run(handler_fn fn, const char *hex) {
     apdu_t a;
     memset(&a, 0, sizeof a);
     if (!apdu_decode(buf, n, &a)) return 0xFFFF;
-    s_resp = (apdu_resp_t){ s_out, sizeof s_out, 0 };
+    s_resp = (apdu_resp_t)APDU_RESP_INIT(s_out, sizeof s_out);
     return fn(&a, &s_resp);
 }
 

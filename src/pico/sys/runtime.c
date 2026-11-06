@@ -135,7 +135,8 @@ void card_runtime_init(const card_profile_t *profile) {
     } else if (profile->nvm_blob && profile->nvm_size) {
         bool loaded = nvm_load(profile->nvm_blob, profile->nvm_size);
         const nvm_status_t *st = nvm_status();
-        log_printf("NVM: %s (%u bytes, slot %lu/%lu, seq %lu)", loaded ? "loaded from flash" : "defaults",
+        log_printf("NVM: %s (%u bytes, slot %lu/%lu, seq %lu)",
+                   loaded ? (st->migrated ? "migrated" : "loaded from flash") : "defaults",
                    (unsigned)profile->nvm_size, (unsigned long)st->slot, (unsigned long)st->slots,
                    (unsigned long)st->seq);
     }

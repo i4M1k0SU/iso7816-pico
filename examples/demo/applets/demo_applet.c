@@ -20,8 +20,10 @@ static uint32_t s_counter;
 // life cycle
 // ---------------------------------------------------------------------------
 
-// After every ATR: volatile state back to its defaults.
-static void demo_reset(void) {
+// After every ATR: volatile state back to its defaults.  `self` is demo_applet (an implementation shared by several
+// applets would find its instance in self->ctx).
+static void demo_reset(const applet_t *self) {
+    (void)self;
     // s_counter deliberately survives a warm reset.
 }
 
@@ -39,6 +41,10 @@ static uint16_t demo_select(const apdu_t *cmd, apdu_resp_t *resp) {
 // ---------------------------------------------------------------------------
 // command handlers
 // ---------------------------------------------------------------------------
+
+// Every handler gets the applet selected on the channel as cmd->applet; an implementation serving several applets
+// (several AIDs, one per instance) keeps its per-instance state behind applet_t.ctx and reaches it through
+// cmd->applet->ctx.  The demo has a single instance and uses file-scope variables.
 
 // 80 10 00 00 Le  -> "<name> <version>" from the card profile
 static uint16_t h_get_version(const apdu_t *cmd, apdu_resp_t *resp) {
@@ -107,9 +113,10 @@ const applet_t demo_applet = {
     .cmds = s_cmds,
     .n_cmds = sizeof s_cmds / sizeof s_cmds[0],
     .select = demo_select,
-    .deselect = NULL,
+    .deselect = NULL,     // void (*)(const applet_t *self, uint8_t channel)
     .classify = NULL,     // every command is in the table, which also gives the T=0 case
     .process = NULL,      // everything is in the table; ISO commands fall through.  A switch on INS here instead
                           // needs .classify as well, or T=0 drops the data field of the commands not in the table
     .reset = demo_reset,
+    .ctx = NULL,          // per-instance state for a shared implementation (cmd->applet->ctx, self->ctx)
 };

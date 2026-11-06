@@ -4,6 +4,9 @@
 
 #include "iso7816_pico/apdu.h"
 
+// Stored inside the application's NVM blob (card_profile->pins points there), so its layout is part of every image in
+// flash: any change to this struct (members, sizes, SEC_PIN_MAX_LEN, meaning) must bump NVM_LAYOUT_FRAMEWORK in
+// src/core/hal/nvm.h.
 typedef struct {
     uint8_t ref;                       // reference data qualifier (P2 of VERIFY)
     uint8_t value[SEC_PIN_MAX_LEN];
