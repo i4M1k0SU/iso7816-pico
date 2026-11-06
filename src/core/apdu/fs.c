@@ -142,7 +142,7 @@ uint16_t fs_record_count(const fs_file_t *ef) {
 // records in use).  Cyclic EFs number from the most recently written record.
 static bool rec_slot(const fs_file_t *ef, uint16_t n, uint16_t *slot) {
     uint16_t cap = rec_capacity(ef);
-    if (n == 0 || n > fs_record_count(ef)) return false;
+    if (n == 0 || n > fs_record_count(ef) || cap == 0) return false;
     if (ef->type == FS_EF_CYCLIC) {
         *slot = (uint16_t)((rec_head(ef) + cap - (n - 1)) % cap);
     } else {
@@ -495,7 +495,8 @@ uint16_t fs_cmd_read_record(const apdu_t *cmd, apdu_resp_t *resp) {
         uint16_t count = fs_record_count(ef);
         uint16_t first = cmd->p1 ? cmd->p1 : 1;
         if (first > count) return SW_RECORD_NOT_FOUND;
-        for (uint16_t i = 0; i < count - first + 1; i++) {
+        uint16_t total = (uint16_t)(count - first + 1);
+        for (uint16_t i = 0; i < total; i++) {
             uint16_t n = mode == 0x05 ? (uint16_t)(first + i) : (uint16_t)(count - i);
             const uint8_t *p;
             uint16_t len;

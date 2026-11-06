@@ -17,7 +17,7 @@ const char *dispatch_name(uint8_t cla, uint8_t ins);
 
 // Execute one complete command APDU.  Returns the status word; response data (if any) is in *resp.  Never returns
 // APDU_UNHANDLED.  A success / warning SW whose response overflowed resp->cap becomes 6F00 without data.
-uint16_t dispatch_process(const apdu_t *cmd, apdu_resp_t *resp);
+uint16_t dispatch_process(const apdu_t *in, apdu_resp_t *resp);
 
 // True when nobody served the command but its INS has a handler under another CLA in the current context (applet
 // selected on the addressed channel, interindustry commands, SELECT / MANAGE CHANNEL): 6E00 instead of 6D00.
