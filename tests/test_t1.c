@@ -11,10 +11,42 @@ static bool xchg(const char *hex) {
     return t1r_exchange(buf, n);
 }
 
+// Expected blocks are written with their LRC.  In CRC mode the LRC is checked to be right (so that the literal stays
+// meaningful) and replaced with the model's CRC.
+static void expect_block(const char *hex, uint8_t *exp, size_t *len) {
+    size_t n = hex_parse(hex, exp, 300);
+    if (t1r_crc()) {
+        uint8_t lrc = 0;
+        for (size_t i = 0; i + 1 < n; i++) lrc ^= exp[i];
+        CHECK_EQ(lrc, exp[n - 1]);
+        n = n - 1 + t1r_edc(exp, n - 1, &exp[n - 1]);
+    }
+    *len = n;
+}
+
 static void check_last(const char *hex) {
-    size_t n;
+    uint8_t exp[300];
+    size_t n, en;
+    expect_block(hex, exp, &en);
     const uint8_t *b = t1r_last_block(&n);
-    CHECK_HEX(b, n, hex);
+    g_checks++;
+    if (n != en || memcmp(b, exp, n) != 0) {
+        g_failures++;
+        printf("  FAIL check_last(%s)%s\n    got ", hex, t1r_crc() ? " [CRC]" : "");
+        hex_print(b, n);
+        printf("\n");
+    }
+}
+
+// Push a block whose EDC is wrong, written with a wrong LRC.  In CRC mode the right CRC with one bit flipped is sent.
+static void push_bad_edc(const char *hex) {
+    uint8_t blk[300];
+    size_t n = hex_parse(hex, blk, sizeof blk);
+    if (t1r_crc()) {
+        n = n - 1 + t1r_edc(blk, n - 1, &blk[n - 1]);
+        blk[n - 1] ^= 0x01;
+    }
+    fake_phy_push(blk, n);
 }
 
 static bool apdu(const char *hex, reader_result_t *r) {
@@ -46,7 +78,7 @@ static void test_t1_errors(void) {
     t1r_begin(254);
     CHECK(xchg("00 00 05 00 11 00 00 00"));
     check_last("00 00 02 6D 00 6F");
-    fake_phy_push_hex("00 80 00 00"); // R(0) with a bad LRC
+    push_bad_edc("00 80 00 00"); // R(0) with a bad LRC
     CHECK(t1_handle_block(-1));
     check_last("00 91 00 91");
     CHECK(r_block(0));
@@ -74,10 +106,10 @@ static void test_t1_errors(void) {
         uint8_t ns = (saved[1] >> 6) & 1;
         CHECK_EQ(ns, (chunks - 1) & 1);
         payload += saved[2];
-        fake_phy_push_hex("00 90 00 00"); // a corrupted block in between changes nothing
+        push_bad_edc("00 90 00 00"); // a corrupted block in between changes nothing
         CHECK(t1_handle_block(-1));
         b = t1r_last_block(&n);
-        CHECK(n == 4 && (b[1] & 0xC0) == 0x80);
+        CHECK(n == 3 + t1r_edc_len() && (b[1] & 0xC0) == 0x80);
         CHECK(r_block(ns));
         b = t1r_last_block(&n);
         CHECK(n == saved_len && memcmp(b, saved, n) == 0);
@@ -95,7 +127,7 @@ static void test_t1_errors(void) {
     CHECK(xchg("21 00 05 00 11 00 00 00"));
     check_last("12 00 02 6D 00 7D");
     t1r_begin(254);
-    fake_phy_push_hex("21 00 05 00 11 00 00 00 00"); // bad LRC
+    push_bad_edc("21 00 05 00 11 00 00 00 00"); // bad LRC
     CHECK(t1_handle_block(-1));
     check_last("00 81 00 81");
     CHECK(r_block(1));
@@ -145,12 +177,12 @@ static void test_t1_errors(void) {
     check_last("00 90 00 90");
     CHECK(r_block(0));
     check_last("00 90 00 90");
-    fake_phy_push_hex("00 40 03 81 00 04 00"); // bad LRC
+    push_bad_edc("00 40 03 81 00 04 00"); // bad LRC
     CHECK(t1_handle_block(-1));
     check_last("00 91 00 91");
     CHECK(xchg("00 40 03 81 00 04"));
     b = t1r_last_block(&n);
-    CHECK(n == 4 + 6 && b[1] == 0x00 && b[2] == 6 && b[7] == 0x90 && b[8] == 0x00);
+    CHECK(n == 3 + 6 + t1r_edc_len() && b[1] == 0x00 && b[2] == 6 && b[7] == 0x90 && b[8] == 0x00);
 
     // LEN = FF (reserved): the card waits until the reader has been silent for CWT before its single R-block, so the
     // rest of the block (up to 256 characters) is neither collided with nor parsed as further blocks.
@@ -177,9 +209,9 @@ static void test_t1_errors(void) {
     check_last("00 92 00 92");
 }
 
-void test_t1(void) {
+// The main scenarios; run once with the LRC and once with the CRC.
+static void test_t1_scenarios(void) {
     reader_result_t r;
-    g_fake_protocol = 1;
     dispatch_reset();
     t1r_begin(254);
 
@@ -188,7 +220,7 @@ void test_t1(void) {
     check_last("00 00 02 6D 00 6F");
 
     // Bad LRC -> R(1) with the EDC error bit.
-    fake_phy_push_hex("00 40 05 00 11 00 00 00 00");
+    push_bad_edc("00 40 05 00 11 00 00 00 00");
     CHECK(t1_handle_block(-1));
     check_last("00 91 00 91");
 
@@ -277,4 +309,87 @@ void test_t1(void) {
     check_last("00 00 02 6D 00 6F");
 
     test_t1_errors();
+    CHECK_EQ(t1r_edc_errors(), 0); // every block from the card carried the EDC the model computes
+}
+
+// Reference CRC, structurally independent of both the card (reflected bitwise loop) and the model (reflected table):
+// the MSB-first register of ISO/IEC 13239 / ITU-T V.41 (polynomial 1021) fed with bit-reversed bytes, result bit
+// reversed.  With the final complement it is CRC-16/IBM-SDLC (X-25); T=1 sends it without the complement.
+static uint16_t rev16(uint16_t v) {
+    uint16_t r = 0;
+    for (int i = 0; i < 16; i++) r = (uint16_t)(r | (((v >> i) & 1) << (15 - i)));
+    return r;
+}
+
+static uint16_t ref_crc_sdlc(const uint8_t *p, size_t n) {
+    uint16_t c = 0xFFFF;
+    for (size_t i = 0; i < n; i++) {
+        c ^= (uint16_t)(rev16(p[i]) & 0xFF00); // byte bit-reversed into the high half
+        for (int k = 0; k < 8; k++) c = (uint16_t)((c & 0x8000) ? (c << 1) ^ 0x1021 : c << 1);
+    }
+    return (uint16_t)~rev16(c);
+}
+
+// The EDC definitions themselves, and the card's CRC on the wire against literal values.
+static void test_t1_edc_reference(void) {
+    // Published check values for "123456789": CRC-16/IBM-SDLC (X-25) 906E; without the complement (CRC-16/MCRF4XX,
+    // what pcsc-lite's csum_crc_compute returns) 6F91.
+    const uint8_t check[] = "123456789";
+    CHECK_EQ(ref_crc_sdlc(check, 9), 0x906E);
+    CHECK_EQ(t1r_crc16(check, 9), 0x6F91);
+    CHECK_EQ(t1r_crc16(NULL, 0), 0xFFFF);
+    // pcsc-lite's crctab starts 0000 1189 2312 329B: one byte FE from FFFF gives 00FF ^ crctab[01].
+    CHECK_EQ(t1r_crc16((const uint8_t[]){ 0xFE }, 1), 0x00FF ^ 0x1189);
+    // The model agrees with the reference on blocks of all lengths.
+    uint8_t buf[260];
+    for (size_t i = 0; i < sizeof buf; i++) buf[i] = (uint8_t)(i * 37 + 11);
+    bool same = true;
+    for (size_t n = 0; n <= sizeof buf; n++) same &= t1r_crc16(buf, n) == (uint16_t)~ref_crc_sdlc(buf, n);
+    CHECK(same);
+
+    // The card, in CRC mode, against literal blocks (computed outside this code base): high byte first, no complement.
+    t1r_set_crc(true);
+    dispatch_reset();
+    t1r_begin(254);
+    size_t n;
+    const uint8_t *b;
+    fake_phy_push_hex("00 00 05 00 11 00 00 00 B7 11"); // I(0) 00 11 00 00 00
+    CHECK(t1_handle_block(-1));
+    b = t1r_last_block(&n);
+    CHECK_HEX(b, n, "00 00 02 6D 00 50 1D");
+    CHECK_EQ(ref_crc_sdlc(b, 5), 0xAFE2); // what a complemented CRC would have sent instead
+    fake_phy_push_hex("00 C0 00 0C 66");  // S(RESYNCH) with the complemented (X-25) value: rejected
+    CHECK(t1_handle_block(-1));
+    b = t1r_last_block(&n);
+    CHECK_HEX(b, n, "00 91 00 39 B6");   // R(1), EDC error
+    fake_phy_push_hex("00 C0 00 99 F3"); // the right CRC, byte-swapped: rejected
+    CHECK(t1_handle_block(-1));
+    b = t1r_last_block(&n);
+    CHECK_HEX(b, n, "00 91 00 39 B6"); // R(1), EDC error
+    fake_phy_push_hex("00 C0 00 F3 99");
+    CHECK(t1_handle_block(-1));
+    b = t1r_last_block(&n);
+    CHECK_HEX(b, n, "00 E0 00 D0 AA");
+    // A response chained in several blocks: the model checks the CRC of every block.
+    t1r_set_ifsd(0x20);
+    reader_result_t r;
+    uint8_t cmd[] = { 0x00, 0xB0, 0x81, 0x00, 0x00 };
+    CHECK(t1r_apdu(cmd, sizeof cmd, &r));
+    CHECK_EQ(r.sw, 0x9000);
+    CHECK_EQ(t1r_edc_errors(), 0);
+    t1r_set_crc(false);
+}
+
+void test_t1(void) {
+    g_fake_protocol = 1;
+    test_t1_edc_reference();
+
+    t1r_set_crc(false);
+    test_t1_scenarios();
+
+    int before = g_checks;
+    t1r_set_crc(true);
+    test_t1_scenarios();
+    printf("  CRC mode: %d checks\n", g_checks - before);
+    t1r_set_crc(false);
 }
