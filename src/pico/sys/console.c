@@ -20,6 +20,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // ---------------------------------------------------------------------------
@@ -156,6 +157,9 @@ static void print_status(void) {
     log_printf("errors     : rx parity %lu, rx overrun %lu, tx echo %lu, tx timeout %lu",
                (unsigned long)st->rx_parity_errors, (unsigned long)st->rx_overruns,
                (unsigned long)st->tx_echo_errors, (unsigned long)st->tx_timeouts);
+    log_printf("repetition : %lu characters repeated after the reader's error signal", (unsigned long)st->tx_repeats);
+    log_printf("rx latency : max %lu us, %lu characters picked up too late for an error signal",
+               (unsigned long)st->rx_max_latency_us, (unsigned long)st->rx_late);
     log_printf("last ATR   : %s", st->last_error ? st->last_error : "ok");
     log_printf("  first ATR echo %lu us after start; CLK by PIO counter %lu Hz",
                (unsigned long)st->dbg_delay_us, (unsigned long)st->dbg_clk_counted_hz);
@@ -241,10 +245,32 @@ static void cmd_trace(const char *args) {
     (void)args;
     size_t n;
     const phy_trace_t *tr = phy_trace(&n);
-    log_printf("trace of last session start (%u entries):", (unsigned)n);
-    for (size_t i = 0; i < n; i++) {
-        log_printf("  %7lu us  %c %03X", (unsigned long)tr[i].t_us, tr[i].kind, tr[i].value);
+    log_printf("trace of the last session (first %u events; us since its start, T / P = sent / with bad parity, "
+               "R = received, E / e = reader's error signal start / end in 1/10 ETU):", (unsigned)n);
+    for (size_t i = 0; i < n; i += 4) {
+        char line[4 * 16 + 1];
+        strbuf_t sb = { line, sizeof line, 0 };
+        line[0] = 0;
+        for (size_t j = i; j < n && j < i + 4; j++) {
+            sb_printf(&sb, " %8lu %c %03X", (unsigned long)tr[j].t_us, tr[j].kind, tr[j].value);
+        }
+        log_printf("%s", line);
     }
+}
+
+// Diagnostic for the reader's error signal and the card's character repetition (T=0): one character goes out with a
+// wrong parity bit; `trace` shows what the reader did about it.
+static void cmd_txperr(const char *args) {
+    char *end;
+    unsigned long index = strtoul(args, &end, 0);
+    unsigned long count = *end ? strtoul(end, NULL, 0) : 1;
+    if (end == args) {
+        log_printf("usage: txperr <index> [count]  (character index from TS = 0, count 0 = off)");
+        return;
+    }
+    phy_debug_bad_parity((uint32_t)index, (uint32_t)count);
+    log_printf("character %lu of this or the next session goes out with a wrong parity bit %lu time(s)", index,
+               count);
 }
 
 // Wiring check: watch every GPIO for 15 s and report which ones moved, with the order of their first edges (ISO 7816-3
@@ -408,7 +434,8 @@ static const console_cmd_t s_builtin[] = {
     { "help",    "list the commands",                                          cmd_help    },
     { "status",  "statistics (clock, sessions, errors, last ATR)",            cmd_status  },
     { "card",    "card profile (ATR, applets, files, PINs, NVM)",             cmd_card    },
-    { "trace",   "TX/RX trace of the last session start",                     cmd_trace   },
+    { "trace",   "TX/RX trace of the last session (first events)",            cmd_trace   },
+    { "txperr",  "<index> [count]  send character <index> (TS = 0) with bad parity", cmd_txperr },
     { "gpio",    "watch all GPIOs for 15 s (find the contacts; no session)",  cmd_gpio    },
     { "pins",    "watch RST/CLK/IO for 5 s (no session)",                     cmd_pins    },
     { "apdu",    "<hex>  run a command APDU through the dispatcher (no session)", cmd_apdu },
