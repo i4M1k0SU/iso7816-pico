@@ -43,7 +43,7 @@ pico_add_extra_outputs(my_card)
 
 上書きできる設定と既定値は [include/iso7816_pico/config.h](../include/iso7816_pico/config.h) にある
 (`ISO7816_PIN_*`、`APDU_BUF_SIZE`、`CARD_MAX_CHANNELS`、`SEC_PIN_MAX_LEN`、`NVM_FLASH_BYTES`、`LOG_RING_SIZE`、
-`WATCHDOG_TIMEOUT_MS`)。値はコンパイル定義として利用側の翻訳単位にも伝わるので、公開ヘッダの構造体サイズが
+`WATCHDOG_TIMEOUT_MS`、`NVM_IDLE_SAVE_MS`)。値はコンパイル定義として利用側の翻訳単位にも伝わるので、公開ヘッダの構造体サイズが
 食い違うことはない。
 
 VS Code の Raspberry Pi Pico 拡張で作ったプロジェクトなら、拡張が生成する `CMakeLists.txt` の先頭ブロック

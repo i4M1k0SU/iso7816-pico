@@ -58,4 +58,5 @@ void test_dispatch(void);
 void test_select(void);
 void test_fs(void);
 void test_nvm(void);
+void test_nvm_pin_durability(void);
 void test_card_suite(void);

@@ -55,6 +55,7 @@ set(SEC_PIN_MAX_LEN 16 CACHE STRING "Longest stored PIN / PUK")
 set(NVM_FLASH_BYTES 65536 CACHE STRING "Flash bytes reserved for the NVM journal (multiple of 4096)")
 set(LOG_RING_SIZE 4096 CACHE STRING "Console log ring buffer in bytes")
 set(WATCHDOG_TIMEOUT_MS 3000 CACHE STRING "Watchdog timeout in ms (0 = disabled)")
+set(NVM_IDLE_SAVE_MS 200 CACHE STRING "Quiet time in ms after which a dirty NVM blob is saved")
 
 # ---- iso7816_pico::core ------------------------------------------------------------------------------------------------
 set(ISO7816_PICO_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
@@ -94,6 +95,7 @@ target_compile_definitions(iso7816_pico_pico PUBLIC
         ISO7816_PIN_RST=${ISO7816_PIN_RST}
         LOG_RING_SIZE=${LOG_RING_SIZE}
         WATCHDOG_TIMEOUT_MS=${WATCHDOG_TIMEOUT_MS}
+        NVM_IDLE_SAVE_MS=${NVM_IDLE_SAVE_MS}
 )
 target_compile_options(iso7816_pico_pico PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(iso7816_pico_pico

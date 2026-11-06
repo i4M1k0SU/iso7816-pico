@@ -66,6 +66,7 @@ int main(int argc, char **argv) {
     run_test("select", test_select);
     run_test("fs", test_fs);
     run_test("nvm", test_nvm);
+    run_test("nvm pin durability", test_nvm_pin_durability);
     run_test("card suite", test_card_suite);
     printf("\n%d checks, %d failure(s)\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

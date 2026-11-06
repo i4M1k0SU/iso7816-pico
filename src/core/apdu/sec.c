@@ -99,16 +99,34 @@ static size_t plain_len(const sec_pin_t *p, size_t stored_len) {
     return card_profile->hooks.pin_transform ? p->plain_len : stored_len;
 }
 
-// Compare a candidate with the stored PIN, maintaining the retry counter (decremented before the comparison so that
-// tearing cannot gain a try).
+// Make a decremented retry counter durable before the candidate is compared.  Otherwise a wrong try followed by a
+// power cut (before the runtime's deferred save) would leave the old counter in flash and the PIN could be guessed
+// without limit.  The whole blob is written (any other pending change goes with it), which takes ~50-100 ms with
+// interrupts off: well inside the waiting time of the default parameters (T=0 WWT ~0.7 s, T=1 BWT ~1.2 s at
+// 4.8 MHz), so no keepalive is sent.  Only effective when the sec_pin_t array lives inside the profile's NVM blob (see
+// docs/card-profile.md).  The tries are still counted in RAM when the save fails, which is logged.
+static void persist_counter(const char *why) {
+    if (!card_profile->nvm_blob || !card_profile->nvm_size) {
+        nvm_mark_dirty();
+        return;
+    }
+    nvm_take_dirty();   // other pending changes go out with this save
+    if (nvm_save_logged(card_profile->nvm_blob, card_profile->nvm_size, why) == NVM_SAVE_FAILED) {
+        nvm_mark_dirty();   // retried by the runtime's deferred save
+    }
+}
+
+// Compare a candidate with the stored PIN, maintaining the retry counter (decremented and saved to flash before the
+// comparison so that tearing cannot gain a try).
 static uint16_t try_pin(uint8_t ch, sec_pin_t *p, const uint8_t *cand, size_t len) {
     if (p->retries == 0) return SW_AUTH_BLOCKED;
     p->retries--;
-    nvm_mark_dirty();
+    persist_counter("(PIN try)");
     uint8_t form[SEC_PIN_MAX_LEN];
     size_t n = stored_form(p, cand, len, form);
     if (n && n == p->len && equal(form, p->value, n)) {
-        p->retries = p->max_retries;
+        p->retries = p->max_retries;   // restored in RAM; saved by the deferred save
+        nvm_mark_dirty();
         sec_set_verified(ch, p->ref, true);
         return SW_OK;
     }
@@ -182,13 +200,14 @@ uint16_t sec_cmd_reset_retry_counter(const apdu_t *cmd, apdu_resp_t *resp) {
         size_t puk_plain = plain_len(p, p->puk_len);
         if (cmd->lc < puk_plain) return SW_WRONG_LENGTH;
         p->puk_retries--;
-        nvm_mark_dirty();
+        persist_counter("(PUK try)");
         uint8_t form[SEC_PIN_MAX_LEN];
         size_t n = stored_form(p, cmd->data, puk_plain, form);
         if (!n || n != p->puk_len || !equal(form, p->puk, n)) {
             return p->puk_retries ? SW_WARN_COUNTER(p->puk_retries) : SW_AUTH_BLOCKED;
         }
         p->puk_retries = p->puk_max_retries;
+        nvm_mark_dirty();
         if (cmd->p1 == 0x00) {
             uint16_t sw = set_pin(p, cmd->data + puk_plain, cmd->lc - puk_plain);
             if (sw != SW_OK) return sw;
