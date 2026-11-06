@@ -96,7 +96,9 @@ ctest --test-dir build-tests --output-on-failure     # または build-tests/iso
 
 GitHub Actions (`.github/workflows/ci.yml`) は push ごとにこのテストと、Pico SDK を取得しての実機向けビルド (Pico と Pico 2、
 UF2 を成果物として保存)、そして `tests/embed/` (submodule 利用側を模した最小プロジェクト) のビルドを実行する。
-使用する action はコミット SHA で固定している。
+使用する action はコミット SHA で固定している。実機向けビルドのツールは VS Code 拡張と同じ版 (Arm GNU Toolchain 15.2.Rel1、
+ビルド済みの picotool / pioasm 2.3.1) を SHA-256 を確かめて取得し、Pico SDK (サブモジュールは `lib/tinyusb` のみ) と
+合わせて Actions のキャッシュに置く。キャッシュが当たれば apt もダウンロードも picotool / pioasm のビルドも行わない。
 
 ## コンソール (USB シリアル、115200 bps 任意)
 
