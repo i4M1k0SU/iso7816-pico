@@ -39,7 +39,7 @@ add_subdirectory(external/iso7816-pico)               # ライブラリだけが
 
 add_executable(my_card main.c card_profile.c applets/my_applet.c)
 target_link_libraries(my_card PRIVATE iso7816_pico::pico)
-pico_enable_stdio_usb(my_card 1)                      # USB コンソールと無操作 BOOTSEL のために必要
+pico_enable_stdio_usb(my_card 1)                      # 省略可 (ライブラリが pico_stdio_usb をリンクする)
 pico_enable_stdio_uart(my_card 0)                     # UART stdio は既定で有効。GP0 / GP1 を取るので切る
 pico_add_extra_outputs(my_card)
 ```
@@ -47,15 +47,28 @@ pico_add_extra_outputs(my_card)
 上書きできる設定と既定値は [include/iso7816_pico/config.h](../include/iso7816_pico/config.h) にある
 (`ISO7816_PIN_*`、`ISO7816_SELFTEST_PIN_*`、`APDU_BUF_SIZE`、`CARD_MAX_CHANNELS`、`SEC_PIN_MAX_LEN`、`NVM_FLASH_BYTES`、
 `LOG_RING_SIZE`、`WATCHDOG_TIMEOUT_MS`、`NVM_IDLE_SAVE_MS`)。値はコンパイル定義として利用側の翻訳単位にも伝わるので、
-公開ヘッダの構造体サイズが食い違うことはない。ピンはフレームワークのコンパイル時に検査し、GP0〜GP29 の範囲外、
-接点ピン同士の重複、自己診断ピンと接点ピンの重複は `#error` になる。`NVM_FLASH_BYTES` が 4096 の倍数でなければ
-`_Static_assert` で止まる。
+公開ヘッダの構造体サイズが食い違うことはない。
+
+これらは CMake の **キャッシュ変数** である。利用側の `set(... CACHE STRING "")` は変数がまだキャッシュにないときだけ
+効き、一度 `CMakeCache.txt` に入った値は以後の構成でも残る。値を変えるにはコマンドラインで
+`cmake -B build -DAPDU_BUF_SIZE=2048` のように `-D` を付けるか、`CMakeLists.txt` で
+`set(APDU_BUF_SIZE 2048 CACHE STRING "" FORCE)` と書く (FORCE は毎回上書きするので、`-D` による変更は効かなくなる)。
+`CMakeLists.txt` の `set()` を書き換えただけでは古い値のまま構成されるので、その場合はビルドディレクトリを作り直すか
+`-D` を使う。名前はマクロ名と同じで接頭辞がないため、親プロジェクトに同名の変数があればそれが使われる点にも注意する。
+
+値は構成時に [cmake/config_checks.cmake](../cmake/config_checks.cmake) が検査し、範囲外なら `iso7816-pico: ...` の
+メッセージで構成を止める。整数であること、`ISO7816_PIN_*` は GP0〜GP29 で互いに異なること、`ISO7816_SELFTEST_PIN_*` は
+-1 か GP0〜GP29 で互いにも接点ピンとも異なること、`APDU_BUF_SIZE` 261〜65544、`CARD_MAX_CHANNELS` 1〜20、
+`SEC_PIN_MAX_LEN` 1〜255、`NVM_FLASH_BYTES` 8192 以上で 4096 の倍数、`LOG_RING_SIZE` 64 以上、`WATCHDOG_TIMEOUT_MS` は
+RP2040 で 0〜8388、RP2350 で 0〜16777 である。ピンと `NVM_FLASH_BYTES` はフレームワークのコンパイル時にも
+`#error` / `_Static_assert` で検査する (CMake を経由せずに定義した場合のため)。
 
 SDK は UART stdio を既定で有効にするので、`pico_enable_stdio_uart(<target> 0)` を必ず書く。有効のままだと UART0 が
 GP0 / GP1 (GP1 は CLK 接点の既定ピン) を取り、アプリケーションの `printf()` も 115200 bps の UART を待つ。
 フレームワークのコンソールとログは USB CDC だけに書くので、UART の有無に影響されない。
 `pico_stdio_usb` はライブラリの公開依存であり、外すことはできない (コンソール、picotool のリセットインターフェイス、
-1200 bps による BOOTSEL がこれに依存する)。TinyUSB を独自のデバイス構成で使うアプリケーションとは併用できない。
+1200 bps による BOOTSEL がこれに依存する)。ライブラリがリンクするので `pico_enable_stdio_usb(<target> 1)` は書かなくても
+USB stdio が有効になり、`pico_enable_stdio_usb(<target> 0)` と書いても無効にはならない。TinyUSB を独自のデバイス構成で使うアプリケーションとは併用できない。
 フレームワークが使うハードウェア資源の一覧は [8. フレームワークが使う資源](#8-フレームワークが使う資源) にある。
 
 VS Code の Raspberry Pi Pico 拡張で作ったプロジェクトなら、拡張が生成する `CMakeLists.txt` の先頭ブロック

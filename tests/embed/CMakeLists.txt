@@ -39,7 +39,8 @@ add_subdirectory(${FRAMEWORK_DIR} iso7816-pico)
 
 add_executable(embed-test main.c)
 target_link_libraries(embed-test PRIVATE iso7816_pico::pico)
-target_compile_options(embed-test PRIVATE -Wall -Wextra -Werror)
+# Warnings as errors for the application's own sources only (the executable also compiles the SDK's sources).
+set_source_files_properties(main.c PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Werror")
 pico_enable_stdio_usb(embed-test 1)
 # The SDK enables UART stdio by default: it would claim GP0 / GP1 (GP1 is the default CLK contact) and slow down any
 # printf() of the application.  The framework's console uses USB only.

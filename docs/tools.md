@@ -6,18 +6,28 @@ VS Code の Raspberry Pi Pico 拡張が入れた SDK / GCC / picotool (`~/.pico-
 Windows は PowerShell 版、Linux / macOS (と Git Bash) はシェル版を使う。
 
 ```powershell
-.\tools\flash.ps1            # cmake + ninja → picotool load -f -x
-.\tools\flash.ps1 -NoBuild   # 書き込みのみ
+.\tools\flash.ps1                  # cmake + ninja → picotool load -f -x
+.\tools\flash.ps1 -NoBuild         # 書き込みのみ
+.\tools\flash.ps1 -NoFlash         # ビルドのみ
+.\tools\flash.ps1 -Board pico2     # Pico 2 (RP2350) 向けに build-pico2/ でビルドして書き込む
 ```
 
 ```sh
-tools/flash.sh               # 同上 (PICO_SDK_ROOT で ~/.pico-sdk 以外も指定できる)
-tools/flash.sh --no-build    # 書き込みのみ
+tools/flash.sh                     # 同上 (PICO_SDK_ROOT で ~/.pico-sdk 以外も指定できる)
+tools/flash.sh --no-build          # 書き込みのみ
+tools/flash.sh --no-flash          # ビルドのみ
+tools/flash.sh --board pico2       # Pico 2 向け (build-pico2/)
 ```
 
 どちらもリポジトリ単独のビルド (`examples/demo` → `build/examples/demo/iso7816-pico-demo.uf2`) を書き込む。
-Pico 2 向けは `cmake -S . -B build-pico2 -G Ninja -DPICO_BOARD=pico2` で別ディレクトリに構成する (コンパイルのみ確認済み、
-実機は未検証)。利用側プロジェクトからの使い方は [embedding.md](embedding.md)。
+`-Board` / `--board` に `pico` 以外を指定すると `build-<ボード名>/` を `-DPICO_BOARD=<ボード名>` で構成して使う
+(`build.ninja` がまだない場合だけ構成し、あればそのまま ninja を実行する)。Pico 2 向けはコンパイルのみ確認済みで、
+実機は未検証である。利用側プロジェクトからの使い方は [embedding.md](embedding.md)。
+
+SDK、GCC、picotool の版は `CMakeLists.txt` の VS Code 拡張用ブロック (`sdkVersion` / `toolchainVersion` /
+`picotoolVersion`) に固定された版を使う。その版が `~/.pico-sdk` に入っていなければ警告を出し、入っている中で最新の版を
+使う。CMake と Ninja は入っている中で最新の版を使う。シェル版は `PICO_SDK_PATH` / `PICO_TOOLCHAIN_PATH` が設定済みなら
+それを優先する。
 
 Linux では picotool が USB デバイスを開けるように、picotool 付属の udev ルール (`udev/99-picotool.rules`) を入れるか
 sudo で実行する。

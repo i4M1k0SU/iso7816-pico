@@ -100,8 +100,11 @@ jobs:
           path: build/examples/demo/iso7816-pico-demo.uf2
 
   embedding:
-    name: Embedding contract (tests/embed)
+    name: Embedding contract (tests/embed, ${{ matrix.board }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        board: [pico, pico2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - *restore-tools
@@ -113,5 +116,6 @@ jobs:
           -DPICO_SDK_PATH=$PICO_TOOLS/pico-sdk
           -Dpicotool_DIR=$PICO_TOOLS/picotool
           -Dpioasm_DIR=$PICO_TOOLS/pioasm
+          -DPICO_BOARD=${{ matrix.board }}
       - name: Build
         run: cmake --build build-embed
