@@ -4,7 +4,8 @@
 //   - direct and inverse convention
 //   - any F/D the PIO can count (ETU = F/D clock cycles, >= 8)
 //   - extra guard time (ATR TC1 / N)
-//   - parity checking with the T=0 error signal and character repetition
+//   - parity checking with the T=0 error signal in both directions: a bad character from the reader is answered with
+//     the error signal, a character of ours that the reader rejects with the error signal is repeated
 //   - character turnaround (16 ETU for T=0, 22 ETU block guard time for T=1)
 //
 // Everything is polled from the main loop; the only interrupt is a falling-edge latch on RST so that even a short reset
@@ -40,6 +41,9 @@ typedef struct {
     uint32_t tx_echo_errors;   // our own character read back differently
     uint32_t tx_timeouts;
     uint32_t rx_overruns;      // receiver stalled on a full FIFO: characters from the reader may have been lost
+    uint32_t rx_late;          // characters picked up too late for an error signal (one is skipped if parity was bad)
+    uint32_t rx_max_latency_us; // longest time a character may have waited in the RX FIFO (upper bound)
+    uint32_t tx_repeats;       // characters repeated because the reader sent the error signal (T=0)
     uint32_t clk_hz;           // measured during the last ATR
     uint32_t sys_clk_hz;       // clock the PIO runs at (0 when unknown, e.g. in the host tests)
     volatile uint32_t rst_rises; // RST rising edges seen (written by the RST interrupt)
@@ -57,12 +61,20 @@ typedef struct {
 // Timestamped trace of the last session start (TX pushes and RX words).
 typedef struct {
     uint32_t t_us;     // relative to session start
-    uint8_t kind;      // 'T' = frame pushed (value = byte), 'R' = word received
+    uint8_t kind;      // 'T' = frame pushed (value = byte), 'P' = same with a deliberately wrong parity bit,
+                       // 'R' = word received (9 bits, line states), 'E' = reader's error signal after our character
+                       // (value = its start in 1/10 ETU after our leading edge, 0 = not seen by the CPU's polling),
+                       // 'e' = end of that error signal (1/10 ETU after our leading edge)
     uint16_t value;
 } phy_trace_t;
 
-#define PHY_TRACE_LEN 48
+#define PHY_TRACE_LEN 128
 const phy_trace_t *phy_trace(size_t *count);
+
+// Diagnostic: transmit character number `index` of a session (0 = TS of the ATR, counted over everything the card
+// sends, repetitions not counted) `count` times with a wrong parity bit, to see the reader's error signal and the
+// character repetition.  Fires in the current session if it has not sent that character yet, else in the next one.
+void phy_debug_bad_parity(uint32_t index, uint32_t count);
 
 // Snapshot of the contact lines for diagnostics.
 typedef struct {
@@ -100,7 +112,8 @@ bool phy_params_supported(uint16_t f, uint8_t d);
 bool phy_start_session(const phy_params_t *p);
 
 // Switch parameters in the middle of a session (after a PPS response has been sent).  Must be called between
-// characters.
+// characters; waits until the last character sent has run out (parity bit, guard time) before the state machines are
+// touched, and leaves them alone when the ETU and the guard time stay the same.
 bool phy_apply_params(const phy_params_t *p);
 const phy_params_t *phy_params(void);
 
@@ -114,7 +127,9 @@ bool phy_rx(uint8_t *byte, bool idle);
 // Same with a timeout (microseconds).  Returns 1 = byte, 0 = timeout, -1 = reset pending.
 int phy_rx_timeout(uint8_t *byte, uint32_t timeout_us);
 
-// Transmit characters.  Returns false on reset or timeout.
+// Transmit characters.  Returns false on reset, timeout or a character the reader rejected too often.  With
+// error_signal (T=0) every character is checked for the reader's error signal and repeated, so the characters go out
+// one at a time; without it (T=1) they are streamed.
 bool phy_tx(const uint8_t *data, size_t len);
 
 // Release the I/O line driver (used when the card decides to stay mute).
