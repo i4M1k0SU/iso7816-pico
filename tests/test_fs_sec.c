@@ -120,6 +120,10 @@ static void record_checks(void) {
     CHECK_EQ(fs_record_count(fixed), 4);
     CHECK_EQ(run(fs_cmd_update_record, "00 DC 04 14 01 41"), 0x9000);
     CHECK_EQ(run(fs_cmd_update_record, "00 DC 05 14 01 41"), 0x6A83);
+    // SEARCH RECORD with an empty search string matches every record (cmd->data is NULL then; found by tests/fuzz,
+    // UBSan: memcmp with NULL).
+    CHECK_EQ(run(fs_cmd_search_record, "00 A2 01 14"), 0x9000);
+    CHECK_HEX(s_out, s_resp.len, "01 02 03 04");
 }
 
 static void pin_checks(void) {
