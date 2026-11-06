@@ -70,7 +70,8 @@
 // Flash area (at the very end of the chip) used by the NVM module to persist the card's data between power cycles.
 // It is divided into slots of (header + blob) rounded up to 4 KB sectors and the slots are written in turn, so with a
 // blob under 4 KB these 64 KB give 16 slots, i.e. 16 times the erase endurance of a single sector.  Must be a multiple
-// of 4096.
+// of 4096 (checked when the Pico port is compiled).  The program must end below the region: card_runtime_init()
+// checks that at boot and, if it does not, leaves the flash alone (the NVM is then not persisted).
 #ifndef NVM_FLASH_BYTES
 #define NVM_FLASH_BYTES   (64 * 1024)
 #endif

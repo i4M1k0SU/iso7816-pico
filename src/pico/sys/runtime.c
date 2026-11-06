@@ -15,6 +15,7 @@
 #include "console.h"
 #include "hal/bootsel_button.h"
 #include "hal/nvm.h"
+#include "hal/nvm_port.h"
 #include "hal/phy.h"
 #include "iso7816_pico/config.h"
 #include "iso7816_pico/fs.h"
@@ -120,7 +121,14 @@ void card_runtime_init(const card_profile_t *profile) {
     }
 
     // Card data: persistent image, file system, PINs, ATR.
-    if (profile->nvm_blob && profile->nvm_size && !nvm_fits(profile->nvm_size)) {
+    uintptr_t program_end, nvm_start;
+    bool region_ok = nvm_port_region_ok(&program_end, &nvm_start);
+    if (!region_ok) {
+        // The port refuses every erase / program then, so the program can never erase its own code.
+        log_printf("NVM: program ends at 0x%08lx, past the NVM region at 0x%08lx (PICO_FLASH_SIZE_BYTES %lu, "
+                   "NVM_FLASH_BYTES %lu): flash left alone, NOT persisted", (unsigned long)program_end,
+                   (unsigned long)nvm_start, (unsigned long)PICO_FLASH_SIZE_BYTES, (unsigned long)NVM_FLASH_BYTES);
+    } else if (profile->nvm_blob && profile->nvm_size && !nvm_fits(profile->nvm_size)) {
         log_printf("NVM: %u-byte blob needs 2 slots of %lu bytes, NVM_FLASH_BYTES is %lu: NOT persisted",
                    (unsigned)profile->nvm_size, (unsigned long)NVM_SLOT_BYTES(profile->nvm_size),
                    (unsigned long)NVM_FLASH_BYTES);
