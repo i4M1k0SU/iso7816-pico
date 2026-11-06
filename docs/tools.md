@@ -110,6 +110,29 @@ UF2 を成果物として保存)、そして `tests/embed/` (submodule 利用側
 ビルド済みの picotool / pioasm 2.3.1) を SHA-256 を確かめて取得し、Pico SDK (サブモジュールは `lib/tinyusb` のみ) と
 合わせて Actions のキャッシュに置く。キャッシュが当たれば apt もダウンロードも picotool / pioasm のビルドも行わない。
 
+### サニタイザーと静的解析
+
+CI はホスト側テストを通常のビルドに加えて AddressSanitizer + UndefinedBehaviorSanitizer 付きでも実行する
+(`host-tests-sanitize` ジョブ)。`-DISO7816_TESTS_SANITIZE=ON` で有効になり、`-fno-sanitize-recover=all` によって
+未定義動作も 1 件でテストを失敗させる。
+
+```sh
+cmake -S tests -B build-san -DISO7816_TESTS_SANITIZE=ON
+cmake --build build-san
+UBSAN_OPTIONS=print_stacktrace=1 ctest --test-dir build-san --output-on-failure
+```
+
+`clang-tidy` ジョブは、ホスト側テストでコンパイルされるすべての C ファイル (`src/core`、デモ、`tests/`、およびそれらが
+読み込む `include/` のヘッダ) をリポジトリの `.clang-tidy` で検査し、警告を 1 件でも出せば失敗する。clang-tidy の版は
+23.1.4 に固定している。有効にしたチェックと、外したチェックとその理由は `.clang-tidy` に書いてある。解析器の誤検出は
+該当行で `// NOLINTNEXTLINE(<チェック名>)` と理由のコメントを付けて抑止する。
+
+```sh
+pip install clang-tidy==23.1.4
+cmake -S tests -B build-tests -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+jq -r '.[].file' build-tests/compile_commands.json | xargs clang-tidy -p build-tests --quiet
+```
+
 ## コンソール (USB シリアル、115200 bps 任意)
 
 ATR や APDU のトレースが流れる。ログは専用リングバッファに溜めて空き時間にだけ送るので、
