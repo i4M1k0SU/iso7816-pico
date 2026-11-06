@@ -18,6 +18,12 @@
 // layout id and size are the ones of this firmware; otherwise it hands it to card_profile->hooks.nvm_migrate (if set)
 // or keeps the defaults, logs both layout ids and marks the blob dirty so that the new image supersedes the old one.
 // Images of the first header format (16 bytes, no layout id) count as layout 0.
+//
+// Header formats: V1 (16 bytes, no layout id), V2 (24 bytes with the layout id, last word FFFFFFFF) and V3 (24 bytes,
+// the last word is a CRC-32 over the 20 header bytes before it).  Only V3 is written; V1 and V2 images are still read
+// (a V2 image of this layout loads normally and is rewritten as V3 at the next save).  A V3 header whose own CRC fails
+// makes that image invisible (counted in nvm_status()->bad_headers), so a flipped bit in its sequence number, layout
+// id or size can neither let a stale image win nor pass for a layout change.
 #pragma once
 
 #include <stdbool.h>
@@ -49,6 +55,8 @@ typedef struct {
     uint32_t stored_size;
     bool layout_changed;
     bool migrated;
+    uint8_t stored_format; // header format of that image: 1, 2 or 3 (0 when there is none)
+    uint32_t bad_headers;  // V3 headers whose header CRC failed (ignored), found by the last nvm_load()
 } nvm_status_t;
 
 // Load the profile's blob (blob / size are card_profile->nvm_blob / nvm_size): copy the newest valid stored image

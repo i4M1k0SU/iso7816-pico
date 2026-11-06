@@ -6,19 +6,22 @@
 
 #include <string.h>
 
-#define NVM_MAGIC    0x324E5637u // "7VN2": header with a layout id
-#define NVM_MAGIC_V1 0x4D564E37u // "7NVM": the first format, 16-byte header without a layout id (layout 0)
+// Header formats.  Only V3 is written; V1 and V2 images are still read, so a firmware update keeps the data.
+#define NVM_MAGIC    0x334E5637u // "7VN3": V3, 24 bytes, hcrc protects the header itself
+#define NVM_MAGIC_V2 0x324E5637u // "7VN2": V2, 24 bytes with a layout id, last word FFFFFFFF (not checked)
+#define NVM_MAGIC_V1 0x4D564E37u // "7NVM": V1, 16-byte header without a layout id (layout 0)
 
 typedef struct {
     uint32_t magic;
-    uint32_t size;     // blob size
-    uint32_t seq;      // increases with every write; the newest valid image wins
-    uint32_t crc;      // CRC-32 of the blob
-    uint32_t layout;   // nvm_layout_id() of the firmware that wrote it
-    uint32_t reserved; // FFFFFFFF; keeps the blob 8-byte aligned in flash
+    uint32_t size;   // blob size
+    uint32_t seq;    // increases with every write; the newest valid image wins
+    uint32_t crc;    // CRC-32 of the blob
+    uint32_t layout; // nvm_layout_id() of the firmware that wrote it
+    uint32_t hcrc;   // V3: CRC-32 of the 20 header bytes before it; also keeps the blob 8-byte aligned in flash
 } nvm_header_t;
 
-#define NVM_HEADER_V1_BYTES 16u
+#define NVM_HEADER_V1_BYTES  16u
+#define NVM_HEADER_CRC_BYTES 20u // magic .. layout
 
 _Static_assert(sizeof(nvm_header_t) == 24, "NVM_SLOT_BYTES() in config.h assumes a 24-byte header");
 _Static_assert(NVM_SECTOR_BYTES == 4096u, "NVM_SLOT_BYTES() in config.h assumes 4 KB sectors");
@@ -29,6 +32,7 @@ typedef struct {
     uint32_t off; // offset of its header in the region (a sector boundary)
     uint32_t hdr; // header bytes (24, or 16 for the first format)
     uint32_t size, seq, layout;
+    uint8_t format; // 1, 2 or 3
 } nvm_image_t;
 
 static bool s_dirty;
@@ -66,15 +70,27 @@ static uint32_t slot_bytes(size_t size) {
     return (uint32_t)NVM_SLOT_BYTES(size);
 }
 
-// Header at a sector boundary, if it looks like one (magic, plausible size).  The CRC is checked separately.
-static bool header_at(uint32_t off, nvm_image_t *im, uint32_t *crc) {
+// Header at a sector boundary, if it looks like one (magic, plausible size, and for V3 the header CRC).  *bad_hcrc
+// is set when a V3 magic was found but the header CRC failed.  The blob CRC is checked separately.
+static bool header_at(uint32_t off, nvm_image_t *im, uint32_t *crc, bool *bad_hcrc) {
     const uint8_t *p = nvm_port_map() + off;
     nvm_header_t h;
     memcpy(&h, p, sizeof h);
+    *bad_hcrc = false;
     if (h.magic == NVM_MAGIC) {
+        if (crc32(p, NVM_HEADER_CRC_BYTES) != h.hcrc) {
+            *bad_hcrc = true;
+            return false;
+        }
+        im->format = 3;
+        im->hdr = sizeof h;
+        im->layout = h.layout;
+    } else if (h.magic == NVM_MAGIC_V2) {
+        im->format = 2;
         im->hdr = sizeof h;
         im->layout = h.layout;
     } else if (h.magic == NVM_MAGIC_V1) {
+        im->format = 1;
         im->hdr = NVM_HEADER_V1_BYTES;
         im->layout = 0;
     } else {
@@ -95,13 +111,18 @@ static bool newer(uint32_t a, uint32_t b) { return (int32_t)(a - b) > 0; }
 
 // The newest valid image in the region, whatever its size, layout or header format.  Every slot starts at a sector
 // boundary for any blob size, so the sectors are scanned one by one; only a candidate newer than the best so far has
-// its CRC computed.  Returns false when there is none.
-static bool find_newest(nvm_image_t *best) {
+// its CRC computed.  A V3 header whose own CRC fails is skipped before its sequence number is looked at, and counted in
+// *bad_headers (if not NULL).  Returns false when there is none.
+static bool find_newest(nvm_image_t *best, uint32_t *bad_headers) {
     bool found = false;
     for (uint32_t off = 0; off < NVM_FLASH_BYTES; off += NVM_SECTOR_BYTES) {
         nvm_image_t im;
         uint32_t crc;
-        if (!header_at(off, &im, &crc)) continue;
+        bool bad;
+        if (!header_at(off, &im, &crc, &bad)) {
+            if (bad && bad_headers) (*bad_headers)++;
+            continue;
+        }
         if (found && !newer(im.seq, best->seq)) continue;
         if (crc32(image_blob(&im), im.size) != crc) continue;
         *best = im;
@@ -110,9 +131,9 @@ static bool find_newest(nvm_image_t *best) {
     return found;
 }
 
-// The image is one this firmware writes: current header format, same layout id, same size.
+// The image holds this firmware's blob: a header with a layout id (V2 or V3), same layout id, same size.
 static bool image_matches(const nvm_image_t *im, size_t size) {
-    return im->hdr == sizeof(nvm_header_t) && im->layout == nvm_layout_id() && im->size == size;
+    return im->format >= 2 && im->layout == nvm_layout_id() && im->size == size;
 }
 
 bool nvm_load(void *blob, size_t size) {
@@ -121,14 +142,21 @@ bool nvm_load(void *blob, size_t size) {
     if (!bytes) return false;
     s_status.slots = NVM_FLASH_BYTES / bytes;
     nvm_image_t im;
-    if (!find_newest(&im)) return false;
+    bool found = find_newest(&im, &s_status.bad_headers);
+    if (s_status.bad_headers) {
+        log_printf("NVM: ignored %lu image(s) with a bad header CRC", (unsigned long)s_status.bad_headers);
+    }
+    if (!found) return false;
     s_status.slot = im.off / bytes;
     s_status.seq = im.seq;
     s_status.stored_layout = im.layout;
     s_status.stored_size = im.size;
+    s_status.stored_format = im.format;
     if (image_matches(&im, size)) {
         memcpy(blob, image_blob(&im), size);
         s_status.valid = true;
+        // A V2 image is used as it is and rewritten as V3 at the next save, so that its header is protected too.
+        if (im.format != 3) nvm_mark_dirty();
         return true;
     }
 
@@ -161,8 +189,8 @@ nvm_save_result_t nvm_save(const void *blob, size_t size) {
 
     // Where the newest image is (nvm_load() may not have run, or the flash may have changed since).
     nvm_image_t im;
-    bool have = find_newest(&im);
-    if (have && image_matches(&im, size) && memcmp(image_blob(&im), blob, size) == 0) {
+    bool have = find_newest(&im, NULL);
+    if (have && im.format == 3 && image_matches(&im, size) && memcmp(image_blob(&im), blob, size) == 0) {
         s_status.valid = true;
         s_status.slot = im.off / bytes;
         s_status.seq = im.seq;
@@ -178,7 +206,8 @@ nvm_save_result_t nvm_save(const void *blob, size_t size) {
     if (!nvm_port_erase(base, bytes)) return NVM_SAVE_FAILED;
 
     // Program page by page: the header shares the first page with the start of the blob.
-    nvm_header_t h = { NVM_MAGIC, (uint32_t)size, next_seq, crc32(blob, size), nvm_layout_id(), 0xFFFFFFFFu };
+    nvm_header_t h = { NVM_MAGIC, (uint32_t)size, next_seq, crc32(blob, size), nvm_layout_id(), 0 };
+    h.hcrc = crc32((const uint8_t *)&h, NVM_HEADER_CRC_BYTES);
     const uint8_t *src = blob;
     size_t total = sizeof h + size;
     uint8_t page[NVM_PAGE_BYTES];
@@ -191,11 +220,13 @@ nvm_save_result_t nvm_save(const void *blob, size_t size) {
         if (!nvm_port_program((uint32_t)(base + off), page, sizeof page)) return NVM_SAVE_FAILED;
     }
 
-    // Read back.
+    // Read back (header_at() verifies the header CRC).
     nvm_image_t check;
     uint32_t crc;
-    if (!header_at(base, &check, &crc) || !image_matches(&check, size) || check.seq != next_seq ||
-        crc32(image_blob(&check), size) != crc || memcmp(image_blob(&check), blob, size) != 0) {
+    bool bad;
+    if (!header_at(base, &check, &crc, &bad) || check.format != 3 || !image_matches(&check, size) ||
+        check.seq != next_seq || crc32(image_blob(&check), size) != crc ||
+        memcmp(image_blob(&check), blob, size) != 0) {
         return NVM_SAVE_FAILED;
     }
     s_status.valid = true;
