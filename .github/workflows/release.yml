@@ -1,11 +1,16 @@
 name: Release
 
 # Pushing a version tag (vMAJOR.MINOR, equal to include/iso7816_pico/version.h) builds the demo firmware for pico and
-# pico2 and attaches the UF2 and ELF files to a GitHub Release of that tag. Run by hand (workflow_dispatch) it is a
-# dry run: the same build, uploaded as workflow artifacts only, without a release.
+# pico2 and attaches the UF2 and ELF files to a GitHub Release of that tag. Run by hand on a branch
+# (workflow_dispatch), or from a pull request that changes this workflow or the toolchain action, it is a dry run: the
+# same build, uploaded as workflow artifacts only, without a release.
 on:
   push:
     tags: ['v*']
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/actions/setup-pico-toolchain/**
   workflow_dispatch:
 
 permissions:
@@ -31,7 +36,7 @@ jobs:
             exit 1
           fi
           want="v$major.$minor"
-          if [ "$GITHUB_EVENT_NAME" = push ]; then
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
             if [ "$GITHUB_REF_NAME" != "$want" ]; then
               echo "::error file=$h::tag $GITHUB_REF_NAME does not match version.h ($want): fix the tag or version.h"
               exit 1
@@ -95,7 +100,7 @@ jobs:
 
   release:
     name: Attach the firmware to the release
-    if: github.event_name == 'push'
+    if: github.ref_type == 'tag'
     needs: firmware
     runs-on: ubuntu-latest
     permissions:
