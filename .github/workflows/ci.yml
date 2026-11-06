@@ -7,18 +7,8 @@ on:
 permissions:
   contents: read
 
-# The firmware jobs use the tool versions the Pico VS Code extension uses (toolchainVersion / picotoolVersion in
-# CMakeLists.txt): Arm GNU Toolchain 15.2.Rel1 and the prebuilt picotool / pioasm 2.3.1 from pico-sdk-tools, so the
-# SDK neither needs a distribution toolchain nor builds the host tools from source. They and the SDK are downloaded
-# once into ~/pico-tools and kept in the Actions cache, keyed on the versions below.
-env:
-  PICO_SDK_VERSION: 2.3.1
-  ARM_TOOLCHAIN_VERSION: 15.2.rel1
-  ARM_TOOLCHAIN_SHA256: 597893282ac8c6ab1a4073977f2362990184599643b4c5ee34870a8215783a16
-  PICO_SDK_TOOLS_RELEASE: v2.3.1-0
-  PICOTOOL_SHA256: 878a1a1e7d8336b8be60300c7218f366d9790c0d3a211b181d6d172e80b1248e
-  PIOASM_SHA256: 39758f147a8e615f8c77586ce3c85a25c6728910a86612eea184fc86eb606992
-
+# The firmware jobs get the Pico SDK, the Arm GNU Toolchain and picotool / pioasm from the setup-pico-toolchain
+# composite action (.github/actions), which keeps them in the Actions cache; release.yml uses the same action.
 jobs:
   host-tests:
     name: Host tests (protocol and APDU layers)
@@ -77,50 +67,7 @@ jobs:
         board: [pico, pico2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - &restore-tools
-        name: Restore the Pico SDK and tools
-        id: tools
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/pico-tools
-          key: pico-${{ env.PICO_SDK_VERSION }}-arm-${{ env.ARM_TOOLCHAIN_VERSION }}-${{ env.PICO_SDK_TOOLS_RELEASE }}
-      - &download-tools
-        name: Download the Pico SDK and tools
-        if: steps.tools.outputs.cache-hit != 'true'
-        run: |
-          set -euo pipefail
-          T="$HOME/pico-tools"
-          D="$RUNNER_TEMP/downloads"
-          mkdir -p "$T" "$D"
-          # Only lib/tinyusb (pico_stdio_usb) is needed; btstack, lwip, mbedtls and cyw43-driver are not.
-          git clone -q --depth 1 --branch "$PICO_SDK_VERSION" https://github.com/raspberrypi/pico-sdk.git "$T/pico-sdk"
-          git -C "$T/pico-sdk" submodule update -q --init --depth 1 lib/tinyusb
-          arm=https://armkeil.blob.core.windows.net/developer/files/downloads/gnu/$ARM_TOOLCHAIN_VERSION/binrel
-          arm=$arm/arm-gnu-toolchain-$ARM_TOOLCHAIN_VERSION-x86_64-arm-none-eabi.tar.xz
-          rel=https://github.com/raspberrypi/pico-sdk-tools/releases/download/$PICO_SDK_TOOLS_RELEASE
-          ver=${PICO_SDK_TOOLS_RELEASE#v}
-          ver=${ver%-*}
-          curl -sSfL --retry 3 -o "$D/arm.tar.xz" "$arm"
-          curl -sSfL --retry 3 -o "$D/picotool.tar.gz" "$rel/picotool-$ver-x86_64-lin.tar.gz"
-          curl -sSfL --retry 3 -o "$D/pioasm.tar.gz" "$rel/pico-sdk-tools-$ver-x86_64-lin.tar.gz"
-          sha256sum -c <<EOF
-          $ARM_TOOLCHAIN_SHA256  $D/arm.tar.xz
-          $PICOTOOL_SHA256  $D/picotool.tar.gz
-          $PIOASM_SHA256  $D/pioasm.tar.gz
-          EOF
-          mkdir "$T/arm-none-eabi"
-          tar -xJf "$D/arm.tar.xz" -C "$T/arm-none-eabi" --strip-components=1 \
-            --exclude='*/share/doc' --exclude='*/share/info' --exclude='*/share/man'
-          tar -xzf "$D/picotool.tar.gz" -C "$T" picotool
-          tar -xzf "$D/pioasm.tar.gz" -C "$T" pioasm
-      - &use-tools
-        name: Put the tools on PATH
-        run: |
-          echo "PICO_TOOLS=$HOME/pico-tools" >> "$GITHUB_ENV"
-          echo "$HOME/pico-tools/arm-none-eabi/bin" >> "$GITHUB_PATH"
-          "$HOME/pico-tools/arm-none-eabi/bin/arm-none-eabi-gcc" --version | head -1
-          "$HOME/pico-tools/picotool/picotool" version
-          echo "ninja $(ninja --version)"
+      - uses: ./.github/actions/setup-pico-toolchain
       - name: Configure
         run: >
           cmake -S . -B build -G Ninja
@@ -144,9 +91,7 @@ jobs:
         board: [pico, pico2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - *restore-tools
-      - *download-tools
-      - *use-tools
+      - uses: ./.github/actions/setup-pico-toolchain
       - name: Configure a consumer project
         run: >
           cmake -S tests/embed -B build-embed -G Ninja
