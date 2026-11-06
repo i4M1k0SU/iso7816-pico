@@ -45,19 +45,22 @@ endif()
 option(ISO7816_PICO_BUILD_EXAMPLES "Build the demo firmware in examples/" ${ISO7816_PICO_STANDALONE})
 
 # ---- Configuration (defaults in include/iso7816_pico/config.h) -------------------------------------------------------
-# Override from your project before add_subdirectory(): set(ISO7816_PIN_IO 4 CACHE STRING "") etc.
+# Cache variables: override them from your project before add_subdirectory() (set(ISO7816_PIN_IO 4 CACHE STRING ""))
+# or on the command line (-DISO7816_PIN_IO=4).  Once in CMakeCache.txt a value sticks: change it there, with -D, or
+# with set(... CACHE STRING "" FORCE).  cmake/config_checks.cmake rejects out-of-range values.
 set(ISO7816_PIN_IO 4 CACHE STRING "GPIO of the card I/O contact (C7)")
 set(ISO7816_PIN_CLK 1 CACHE STRING "GPIO of the card CLK contact (C3)")
 set(ISO7816_PIN_RST 2 CACHE STRING "GPIO of the card RST contact (C2)")
 set(ISO7816_SELFTEST_PIN_CLK 16 CACHE STRING "Unconnected GPIO for the boot self-test clock (-1 = no self-test)")
 set(ISO7816_SELFTEST_PIN_IO 17 CACHE STRING "Unconnected GPIO for the boot self-test I/O loop (-1 = no self-test)")
 set(APDU_BUF_SIZE 4096 CACHE STRING "Largest command / response data field in bytes")
-set(CARD_MAX_CHANNELS 4 CACHE STRING "Logical channels (1..4)")
+set(CARD_MAX_CHANNELS 4 CACHE STRING "Logical channels (1..20; 1..4 with the basic CLA coding)")
 set(SEC_PIN_MAX_LEN 16 CACHE STRING "Longest stored PIN / PUK")
 set(NVM_FLASH_BYTES 65536 CACHE STRING "Flash bytes reserved for the NVM journal (multiple of 4096)")
 set(LOG_RING_SIZE 4096 CACHE STRING "Console log ring buffer in bytes")
 set(WATCHDOG_TIMEOUT_MS 3000 CACHE STRING "Watchdog timeout in ms (0 = disabled)")
 set(NVM_IDLE_SAVE_MS 200 CACHE STRING "Quiet time in ms after which a dirty NVM blob is saved")
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/config_checks.cmake)
 
 # ---- iso7816_pico::core ------------------------------------------------------------------------------------------------
 set(ISO7816_PICO_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
