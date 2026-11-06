@@ -141,6 +141,8 @@ USB シリアルコンソールに独自のコマンドを足せる。`console_c
 `.console_cmds` / `.n_console_cmds` に登録する。コンソールは「名前 引数...」の 1 行を Enter で受け取り、名前が一致した
 ハンドラに残りの文字列 (前後の空白を除いたもの、無ければ空文字列) を渡す。出力は `log_printf()` (`sys/log.h`) で行う。
 フレームワーク自身の名前 (help status card trace gpio pins apdu save erase bootsel reboot) が優先される。
+`help` (または空行の Enter) は組み込みコマンドを `built-in:`、プロファイルのコマンドを `.name` (カード名) の見出しの下に
+分けて表示する。
 ハンドラはアイドルループ、すなわちコマンドの合間やリーダー待ちの間に呼ばれるので、長く回る処理では
 `watchdog_update()` と `log_drain()` を挟む。
 

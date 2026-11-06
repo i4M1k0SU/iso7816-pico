@@ -400,15 +400,21 @@ static const console_cmd_t s_builtin[] = {
     { "reboot",  "reboot (run the firmware again)",                           cmd_reboot  },
 };
 
+// Two groups: the built-in commands, then the card profile's under the card's own name, so that a user of a finished
+// card can tell which commands belong to that card.
 static void cmd_help(const char *args) {
     (void)args;
-    log_printf("commands (type a name and Enter):");
+    log_printf("commands (type a name and Enter; Enter alone shows this list):");
+    log_printf("built-in:");
     for (size_t i = 0; i < sizeof s_builtin / sizeof s_builtin[0]; i++) {
         log_printf("  %-8s %s", s_builtin[i].name, s_builtin[i].help);
     }
-    for (size_t i = 0; i < card_profile->n_console_cmds; i++) {
-        const console_cmd_t *cmd = &card_profile->console_cmds[i];
-        log_printf("  %-8s %s", cmd->name, cmd->help ? cmd->help : "");
+    if (card_profile->n_console_cmds) {
+        log_printf("%s:", card_profile->name ? card_profile->name : PICO_PROGRAM_NAME);
+        for (size_t i = 0; i < card_profile->n_console_cmds; i++) {
+            const console_cmd_t *cmd = &card_profile->console_cmds[i];
+            log_printf("  %-8s %s", cmd->name, cmd->help ? cmd->help : "");
+        }
     }
 }
 
@@ -467,12 +473,19 @@ void console_poll(void) {
     }
     was_connected = connected;
 
+    static int prev;   // previous input byte: the LF of a CR LF pair is not a second Enter
     for (;;) {
         int c = getchar_timeout_us(0);
         if (c == PICO_ERROR_TIMEOUT || c < 0) return;
+        int last = prev;
+        prev = c;
         if (c == '\r' || c == '\n') {
-            if (s_line_len == 0) continue;            // empty line, or the LF of a CR LF pair
+            if (c == '\n' && last == '\r') continue;
             echo("\r\n", 2);
+            if (s_line_len == 0) {                    // Enter alone: show the commands
+                cmd_help(NULL);
+                continue;
+            }
             s_line[s_line_len] = 0;
             s_line_len = 0;
             run_line(s_line);

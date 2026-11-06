@@ -112,7 +112,7 @@ typedef struct {
 // ---------------------------------------------------------------------------
 typedef struct {
     const char *name;               // matched exactly (case-sensitive); up to 8 characters keep the help aligned
-    const char *help;               // one line for the `help` listing
+    const char *help;               // one line for the `help` listing (shown under the card's name)
     void (*handler)(const char *args);
 } console_cmd_t;
 
