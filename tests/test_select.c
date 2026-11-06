@@ -155,7 +155,7 @@ static const applet_t s_applet_e = {
     .name = "E", .aid = s_aid_e, .aid_len = sizeof s_aid_e, .cmds = s_cmds_de, .n_cmds = 1, .select = e_select,
 };
 
-// ---- applets F and G: one implementation, two instances told apart by applet_t.ctx -----------------------------------
+// ---- applets F and G: one implementation, two instances told apart by applet_t.ctx ----------------------------------
 
 typedef struct {
     uint8_t tag;
@@ -213,7 +213,7 @@ static const applet_t s_applet_g = {
     .classify = fg_classify, .select = fg_select, .deselect = fg_deselect, .reset = fg_reset,
 };
 
-// ---- applet H: responses that do not fit; applet I: an AID longer than ISO 7816-4 allows -----------------------------
+// ---- applet H: responses that do not fit; applet I: an AID longer than ISO 7816-4 allows ----------------------------
 
 static const uint8_t s_aid_h[] = { 0xA0, 0x00, 0x00, 0x00, 0x08 };
 static const uint8_t s_aid_i[17] = { 0xA0, 0x00, 0x00, 0x00, 0x09 };
