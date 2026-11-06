@@ -1,6 +1,7 @@
 #include "hal/nvm.h"
 
 #include "iso7816_pico/config.h"
+#include "iso7816_pico/log.h"
 
 #include <string.h>
 
@@ -12,6 +13,10 @@ typedef struct {
     uint32_t seq;     // increases with every write; the highest valid one wins
     uint32_t crc;     // CRC-32 of the blob
 } nvm_header_t;
+
+_Static_assert(sizeof(nvm_header_t) == 16, "NVM_SLOT_BYTES() in config.h assumes a 16-byte header");
+_Static_assert(NVM_SECTOR_BYTES == 4096u, "NVM_SLOT_BYTES() in config.h assumes 4 KB sectors");
+_Static_assert(NVM_FLASH_BYTES % NVM_SECTOR_BYTES == 0, "NVM_FLASH_BYTES must be a multiple of 4096");
 
 static bool s_dirty;
 static nvm_status_t s_status;
@@ -25,11 +30,22 @@ static uint32_t crc32(const uint8_t *p, size_t n) {
     return ~c;
 }
 
-// Slot size for a blob: header + blob rounded up to whole sectors.  0 when it does not fit.
+bool nvm_fits(size_t size) { return size <= NVM_FLASH_BYTES && NVM_BLOB_FITS(size); }
+
+// Slot size for a blob: header + blob rounded up to whole sectors.  0 when the region does not hold two such slots:
+// with one slot every save would erase the only image before rewriting it, so a power loss in between would lose
+// everything.  Logged once.
 static uint32_t slot_bytes(size_t size) {
-    size_t need = sizeof(nvm_header_t) + size;
-    uint32_t bytes = (uint32_t)((need + NVM_SECTOR_BYTES - 1) / NVM_SECTOR_BYTES * NVM_SECTOR_BYTES);
-    return bytes <= NVM_FLASH_BYTES ? bytes : 0;
+    if (!nvm_fits(size)) {
+        static bool logged;
+        if (!logged) {
+            logged = true;
+            log_printf("NVM: %lu-byte blob needs 2 slots of %lu bytes but NVM_FLASH_BYTES is %lu; not persisted",
+                       (unsigned long)size, (unsigned long)NVM_SLOT_BYTES(size), (unsigned long)NVM_FLASH_BYTES);
+        }
+        return 0;
+    }
+    return (uint32_t)NVM_SLOT_BYTES(size);
 }
 
 static const uint8_t *slot_ptr(uint32_t slot, uint32_t bytes) { return nvm_port_map() + (size_t)slot * bytes; }
@@ -118,6 +134,14 @@ nvm_save_result_t nvm_save(const void *blob, size_t size) {
     return NVM_SAVE_WRITTEN;
 }
 
+nvm_save_result_t nvm_save_logged(const void *blob, size_t size, const char *why) {
+    nvm_save_result_t r = nvm_save(blob, size);
+    log_printf("NVM: %s (slot %lu, seq %lu)%s%s",
+               r == NVM_SAVE_WRITTEN ? "saved" : r == NVM_SAVE_UNCHANGED ? "unchanged" : "save FAILED",
+               (unsigned long)s_status.slot, (unsigned long)s_status.seq, why ? " " : "", why ? why : "");
+    return r;
+}
+
 bool nvm_erase_all(void) {
     s_status = (nvm_status_t){ 0 };
     return nvm_port_erase(0, NVM_FLASH_BYTES);
@@ -126,6 +150,8 @@ bool nvm_erase_all(void) {
 const nvm_status_t *nvm_status(void) { return &s_status; }
 
 void nvm_mark_dirty(void) { s_dirty = true; }
+
+bool nvm_is_dirty(void) { return s_dirty; }
 
 bool nvm_take_dirty(void) {
     bool d = s_dirty;

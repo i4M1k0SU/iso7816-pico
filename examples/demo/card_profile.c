@@ -69,9 +69,9 @@ static const atr_desc_t s_atr_negotiable __attribute__((unused)) = {
 // ----------------------------------------------------------------------------
 // 2. Persistent data
 //
-// Everything in this struct survives power cycles: it is loaded from flash at boot and written back after a session in
-// which something changed (UPDATE BINARY, PIN counters, ...).  Changing the struct size discards the stored image (back
-// to these defaults).
+// Everything in this struct survives power cycles: it is loaded from flash at boot and written back when the card is
+// idle after something changed (UPDATE BINARY, ...); PIN / PUK counters are saved at once on every try.  Changing the
+// struct size discards the stored image (back to these defaults).
 // ----------------------------------------------------------------------------
 
 #define EF_HELLO_SIZE 256
@@ -83,6 +83,8 @@ typedef struct {
     uint8_t ef_notes[FS_LINEAR_VARIABLE_BYTES(32, 3)]; // linear variable EF 0104
     sec_pin_t pins[2];
 } nvm_data_t;
+
+_Static_assert(NVM_BLOB_FITS(sizeof(nvm_data_t)), "the NVM journal needs two slots: raise NVM_FLASH_BYTES");
 
 static nvm_data_t s_nvm = {
     .ef_hello = "Hello from iso7816-pico! This 256-byte file lives in the card's NVM; "
@@ -206,7 +208,7 @@ static void cmd_unblock(const char *args) {
     (void)args;
     for (size_t i = 0; i < 2; i++) s_nvm.pins[i].retries = s_nvm.pins[i].max_retries;
     card_nvm_changed();
-    log_printf("PIN retry counters reset (saved after the next session)");
+    log_printf("PIN retry counters reset (saved when the card is idle)");
 }
 
 static const console_cmd_t s_console_cmds[] = {
