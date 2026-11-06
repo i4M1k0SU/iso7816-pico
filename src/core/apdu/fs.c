@@ -72,7 +72,9 @@ const fs_file_t *fs_by_name(const uint8_t *name, size_t len, bool partial,
     return NULL;
 }
 
+// Short EF identifiers are 1..30: 0 means "no SFI" in fs_file_t (and "current EF" in the commands), 31 is reserved.
 const fs_file_t *fs_by_sfi(const fs_file_t *df, uint8_t sfi) {
+    if (sfi == 0 || sfi > 30) return NULL;
     for (size_t i = 0; i < s_n; i++) {
         if (s_files[i].parent == df && s_files[i].sfi == sfi && !is_df(&s_files[i])) {
             return &s_files[i];
@@ -125,12 +127,19 @@ static uint8_t *slot_ptr(const fs_file_t *ef, uint16_t slot) {
     return ef->data + FS_REC_HDR_SIZE + (uint32_t)slot * slot_size(ef);
 }
 
-// Record number (1-based) -> slot index.  Cyclic EFs number from the most recently written record.
+uint16_t fs_record_count(const fs_file_t *ef) {
+    if (!is_record_ef(ef)) return 0;
+    if (ef->type == FS_EF_LINEAR_FIXED) return rec_capacity(ef);   // fully allocated: every record exists
+    uint16_t used = rec_used(ef), cap = rec_capacity(ef);
+    return used < cap ? used : cap;
+}
+
+// Record number (1-based) -> slot index; false for a record that does not exist (linear variable / cyclic: beyond the
+// records in use).  Cyclic EFs number from the most recently written record.
 static bool rec_slot(const fs_file_t *ef, uint16_t n, uint16_t *slot) {
     uint16_t cap = rec_capacity(ef);
-    if (n == 0 || n > cap) return false;
+    if (n == 0 || n > fs_record_count(ef)) return false;
     if (ef->type == FS_EF_CYCLIC) {
-        if (n > rec_used(ef)) return false;
         *slot = (uint16_t)((rec_head(ef) + cap - (n - 1)) % cap);
     } else {
         *slot = (uint16_t)(n - 1);
@@ -138,15 +147,9 @@ static bool rec_slot(const fs_file_t *ef, uint16_t n, uint16_t *slot) {
     return true;
 }
 
-uint16_t fs_record_count(const fs_file_t *ef) {
-    if (!is_record_ef(ef)) return 0;
-    return ef->type == FS_EF_LINEAR_FIXED ? rec_capacity(ef) : rec_used(ef);
-}
-
 bool fs_record_read(const fs_file_t *ef, uint16_t n, const uint8_t **out, uint16_t *len) {
     uint16_t slot;
     if (!rec_slot(ef, n, &slot)) return false;
-    if (ef->type != FS_EF_LINEAR_FIXED && n > rec_used(ef)) return false;
     uint8_t *p = slot_ptr(ef, slot);
     if (ef->type == FS_EF_LINEAR_VARIABLE) {
         *len = (uint16_t)(p[0] | (p[1] << 8));
@@ -159,6 +162,7 @@ bool fs_record_read(const fs_file_t *ef, uint16_t n, const uint8_t **out, uint16
     return true;
 }
 
+// Overwrite an existing record.  Only fs_record_append() adds records.
 bool fs_record_write(const fs_file_t *ef, uint16_t n, const uint8_t *in, uint16_t len) {
     uint16_t slot;
     if (!rec_slot(ef, n, &slot) || len > ef->rec_size) return false;
@@ -171,7 +175,8 @@ bool fs_record_write(const fs_file_t *ef, uint16_t n, const uint8_t *in, uint16_
         memset(p, 0, ef->rec_size);
     }
     if (len) memcpy(p, in, len);
-    if (n > rec_used(ef) && ef->type != FS_EF_CYCLIC) rec_set_used(ef, n);
+    // Linear fixed: every record exists; "in use" is only the high-water mark APPEND RECORD continues from.
+    if (ef->type == FS_EF_LINEAR_FIXED && n > rec_used(ef)) rec_set_used(ef, n);
     return true;
 }
 
@@ -196,6 +201,7 @@ bool fs_record_append(const fs_file_t *ef, const uint8_t *in, uint16_t len, uint
     }
     if (used >= cap) return false;
     *n_out = (uint16_t)(used + 1);
+    rec_set_used(ef, *n_out);   // the new record exists from here on
     return fs_record_write(ef, *n_out, in, len);
 }
 
@@ -259,12 +265,14 @@ static void file_changed(const fs_file_t *f) {
     if (card_profile->hooks.on_file_changed) card_profile->hooks.on_file_changed(f);
 }
 
-// Resolve the EF a BINARY command refers to (short EF id in P1 or current).
+// Resolve the EF a BINARY command refers to (short EF id in P1 or current).  P1 = 100x xxxx carries an SFI of 1..30:
+// SFI 0 is not a short identifier (the current EF is addressed with P1 b8 = 0) and 31 is reserved.
 static uint16_t binary_target(const apdu_t *cmd, const fs_file_t **ef, uint32_t *offset) {
     fs_cursor_t *c = fs_cursor(cmd->channel);
     if (cmd->p1 & 0x80) {
-        if (cmd->p1 & 0x60) return SW_WRONG_P1P2;
-        *ef = fs_by_sfi(c->df, cmd->p1 & 0x1F);
+        uint8_t sfi = cmd->p1 & 0x1F;
+        if ((cmd->p1 & 0x60) || sfi == 0 || sfi == 31) return SW_WRONG_P1P2;
+        *ef = fs_by_sfi(c->df, sfi);
         if (!*ef) return SW_FILE_NOT_FOUND;
         *offset = cmd->p2;
         fs_select_file(cmd->channel, *ef);
@@ -277,7 +285,7 @@ static uint16_t binary_target(const apdu_t *cmd, const fs_file_t **ef, uint32_t 
     return SW_OK;
 }
 
-// Resolve the EF a RECORD command refers to (short EF id in P2 b8..b4).
+// Resolve the EF a RECORD command refers to (short EF id in P2 b8..b4: 0 = current EF, 31 reserved).
 static uint16_t record_target(const apdu_t *cmd, const fs_file_t **ef) {
     fs_cursor_t *c = fs_cursor(cmd->channel);
     uint8_t sfi = cmd->p2 >> 3;
@@ -424,8 +432,9 @@ uint16_t fs_cmd_erase_binary(const apdu_t *cmd, apdu_resp_t *resp) {
 // ---------------------------------------------------------------------------
 
 // Turn P1 / P2 b3..b1 into a record number, updating the record pointer for the relative modes.  Returns 0 when there
-// is no such record.
-static uint16_t resolve_record(const apdu_t *cmd, const fs_file_t *ef, bool for_write) {
+// is no such record: reading and writing address only existing records (a linear variable or cyclic EF has as many
+// as are in use; APPEND RECORD adds them).
+static uint16_t resolve_record(const apdu_t *cmd, const fs_file_t *ef) {
     fs_cursor_t *c = fs_cursor(cmd->channel);
     uint16_t count = fs_record_count(ef);
     uint16_t n = 0;
@@ -437,7 +446,7 @@ static uint16_t resolve_record(const apdu_t *cmd, const fs_file_t *ef, bool for_
     case 0x04: n = cmd->p1 ? cmd->p1 : c->record; break;         // by number (00 = current)
     default: return 0;
     }
-    if (n == 0 || n > (for_write ? rec_capacity(ef) : count)) return 0;
+    if (n == 0 || n > count) return 0;
     c->record = n;
     return n;
 }
@@ -464,7 +473,7 @@ uint16_t fs_cmd_read_record(const apdu_t *cmd, apdu_resp_t *resp) {
         }
         return SW_OK;
     }
-    uint16_t n = resolve_record(cmd, ef, false);
+    uint16_t n = resolve_record(cmd, ef);
     if (!n) return SW_RECORD_NOT_FOUND;
     const uint8_t *p;
     uint16_t len;
@@ -489,7 +498,7 @@ static uint16_t write_record(const apdu_t *cmd) {
         file_changed(ef);
         return SW_OK;
     }
-    uint16_t n = resolve_record(cmd, ef, true);
+    uint16_t n = resolve_record(cmd, ef);
     if (!n) return SW_RECORD_NOT_FOUND;
     if (!fs_record_write(ef, n, cmd->data, (uint16_t)cmd->lc)) return SW_RECORD_NOT_FOUND;
     file_changed(ef);

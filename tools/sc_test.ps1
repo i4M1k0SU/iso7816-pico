@@ -225,6 +225,10 @@ try {
     [void](Step 'SELECT EF 0104'      '00 A4 02 0C 02 01 04'          0x9000)
     [void](Step 'READ RECORD (PIN 81)' '00 B2 01 04 00'               0x6982)
     [void](Step 'VERIFY PIN 81'       '00 20 00 81 04 30 30 30 30'    0x9000)
+    # UPDATE RECORD does not create records: on a fresh card the linear variable EF has none until one is appended.
+    if ((Transmit (FromHex '00 B2 01 04 00')).sw -eq 0x6A83) {
+        [void](Step 'APPEND RECORD (var, empty)' '00 E2 00 00 03 61 62 63' 0x9000)
+    }
     [void](Step 'UPDATE RECORD 1 (var)' '00 DC 01 04 03 61 62 63'     0x9000)
     [void](Step 'READ RECORD 1 (var)' '00 B2 01 04 00'                0x9000 '61 62 63')
 
