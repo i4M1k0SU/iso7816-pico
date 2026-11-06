@@ -24,7 +24,7 @@ static uint16_t crc16(const uint8_t *p, size_t n) {
         c ^= p[i];
         for (int k = 0; k < 8; k++) c = (c & 1) ? (c >> 1) ^ 0x8408 : c >> 1;
     }
-    return (uint16_t)~c;
+    return c; // CRC-16/MCRF4XX: no final complement, as in t1.c
 }
 
 static size_t edc_append(uint8_t *blk, size_t n) {

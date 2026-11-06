@@ -14,6 +14,8 @@ static size_t s_last_len;
 static uint32_t s_blocks, s_wtx;
 static uint8_t s_ifsc = 32; // card's limit (reader -> card chunks)
 static uint8_t s_ns;        // our send sequence number
+static bool s_crc;          // EDC: CRC (ATR TC3 b1 = 1) instead of LRC
+static uint32_t s_edc_errors;
 
 static uint8_t lrc(const uint8_t *p, size_t n) {
     uint8_t x = 0;
@@ -21,22 +23,60 @@ static uint8_t lrc(const uint8_t *p, size_t n) {
     return x;
 }
 
+// Table-driven like pcsc-lite's CCID driver (src/openct/checksum.c), on purpose not the card's bitwise loop: reflected
+// x^16 + x^12 + x^5 + 1, preset FFFF, no final complement.
+uint16_t t1r_crc16(const uint8_t *p, size_t n) {
+    static uint16_t table[256];
+    if (!table[1]) {
+        for (unsigned i = 0; i < 256; i++) {
+            uint16_t v = (uint16_t)i;
+            for (int k = 0; k < 8; k++) v = (uint16_t)((v >> 1) ^ ((v & 1) ? 0x8408 : 0));
+            table[i] = v;
+        }
+    }
+    uint16_t v = 0xFFFF;
+    for (size_t i = 0; i < n; i++) v = (uint16_t)((v >> 8) ^ table[(v ^ p[i]) & 0xFF]);
+    return v;
+}
+
+size_t t1r_edc_len(void) { return s_crc ? 2 : 1; }
+
+size_t t1r_edc(const uint8_t *blk, size_t n, uint8_t *out) {
+    if (!s_crc) {
+        out[0] = lrc(blk, n);
+        return 1;
+    }
+    uint16_t c = t1r_crc16(blk, n);
+    out[0] = (uint8_t)(c >> 8); // high byte first, as pcsc-lite sends and checks it
+    out[1] = (uint8_t)c;
+    return 2;
+}
+
+void t1r_set_crc(bool crc) {
+    s_crc = crc;
+    s_edc_errors = 0;
+}
+bool t1r_crc(void) { return s_crc; }
+uint32_t t1r_edc_errors(void) { return s_edc_errors; }
+
 static void push_block(uint8_t nad, uint8_t pcb, const uint8_t *inf, size_t len) {
     uint8_t blk[MAX_BLOCK];
     blk[0] = nad;
     blk[1] = pcb;
     blk[2] = (uint8_t)len;
     if (len) memcpy(&blk[3], inf, len);
-    blk[3 + len] = lrc(blk, 3 + len);
-    fake_phy_push(blk, 4 + len);
+    size_t edc = t1r_edc(blk, 3 + len, &blk[3 + len]);
+    fake_phy_push(blk, 3 + len + edc);
 }
 
 static void hook(uint8_t b) {
     if (s_cur_len < MAX_BLOCK) s_cur[s_cur_len] = b;
     s_cur_len++;
     if (s_cur_len < 3) return;
-    size_t total = 3 + (size_t)s_cur[2] + 1;
+    size_t total = 3 + (size_t)s_cur[2] + t1r_edc_len();
     if (s_cur_len < total) return;
+    uint8_t edc[2];
+    if (memcmp(&s_cur[total - t1r_edc_len()], edc, t1r_edc(s_cur, total - t1r_edc_len(), edc)) != 0) s_edc_errors++;
     memcpy(s_last, s_cur, total);
     s_last_len = total;
     s_cur_len = 0;
@@ -55,15 +95,15 @@ void t1r_begin(uint8_t ifsc) {
     s_blocks = s_wtx = 0;
     s_ifsc = ifsc;
     s_ns = 0;
-    t1_config_t cfg = { ifsc, false, 13 };
+    t1_config_t cfg = { ifsc, s_crc, 13 };
     t1_session_begin(&cfg);
 }
 
 bool t1r_exchange(const uint8_t *block, size_t len) {
     uint8_t blk[MAX_BLOCK];
     memcpy(blk, block, len);
-    blk[len] = lrc(blk, len);
-    fake_phy_push(blk, len + 1);
+    size_t edc = t1r_edc(blk, len, &blk[len]);
+    fake_phy_push(blk, len + edc);
     s_last_len = 0;
     return t1_handle_block(-1);
 }
@@ -106,11 +146,11 @@ bool t1r_apdu(const uint8_t *apdu, size_t len, reader_result_t *out) {
         off += n;
         if (!more) break;
         // Expect R(N(R) = our next sequence number).
-        if (s_last_len < 4 || !is_r(s_last[1]) || ((s_last[1] >> 4) & 1) != s_ns) return false;
+        if (s_last_len < 3 + t1r_edc_len() || !is_r(s_last[1]) || ((s_last[1] >> 4) & 1) != s_ns) return false;
     }
     // Receive the response, acknowledging chained I-blocks.
     for (int hop = 0; hop < 200; hop++) {
-        if (s_last_len < 4 || !is_i(s_last[1])) return false;
+        if (s_last_len < 3 + t1r_edc_len() || !is_i(s_last[1])) return false;
         size_t inf = s_last[2];
         memcpy(out->data + out->len, &s_last[3], inf);
         out->len += inf;
