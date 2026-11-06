@@ -41,12 +41,25 @@ static bool migrate(uint32_t old_layout, const void *old_blob, size_t old_size) 
     (void)old_layout;
     // Copy through an exact-size heap buffer, so that ASan notices if old_size reaches past the stored image's region.
     uint8_t *tmp = malloc(old_size ? old_size : 1);
-    if (!tmp) abort();
+    if (!tmp) FUZZ_FAIL();
     memcpy(tmp, old_blob, old_size);
     size_t n = old_size < card_profile->nvm_size ? old_size : card_profile->nvm_size;
     if (s_accept) memcpy(card_profile->nvm_blob, tmp, n);
     free(tmp);
     return s_accept;
+}
+
+// Real images have consecutive sequence numbers, while random ones may lie more than 2^31 apart, where the wrapping
+// "newer" comparison has no newest image (a is newer than b, b than c, c than a) and a save cannot become the newest
+// either; on flash that would take 2^31 saves.  So every header's seq is folded into -32768..32767, which keeps the
+// wrap from FFFFFFFF to 0 in reach.  The CRC covers the blob only, but a blob may span later headers: this runs before
+// fix_crcs().
+static void fold_seqs(uint8_t *flash) {
+    for (size_t off = 0; off < NVM_FLASH_BYTES; off += NVM_SECTOR_BYTES) {
+        uint8_t *p = flash + off;
+        if (rd32(p) != MAGIC && rd32(p) != MAGIC_V1) continue;
+        p[10] = p[11] = (p[9] & 0x80) ? 0xFF : 0x00;
+    }
 }
 
 static void fix_crcs(uint8_t *flash) {
@@ -84,21 +97,22 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         memcpy(flash + off, data + pos, n);
         pos += n;
     }
+    fold_seqs(flash);
     if (cfg & 1) fix_crcs(flash);
 
     bool fits = nvm_fits(blob_size);
     bool loaded = nvm_load(s_blob, blob_size);
     const nvm_status_t *st = nvm_status();
-    if (loaded && !fits) abort();
-    if (loaded && !st->migrated && (!st->valid || st->layout_changed)) abort();
-    if (loaded && st->migrated && !(cfg & 2 && s_accept)) abort();
+    if (loaded && !fits) FUZZ_FAIL();
+    if (loaded && !st->migrated && (!st->valid || st->layout_changed)) FUZZ_FAIL();
+    if (loaded && st->migrated && !(cfg & 2 && s_accept)) FUZZ_FAIL();
 
     if ((cfg & 8) && fits) {
         nvm_save_result_t r = nvm_save(s_blob, blob_size);
-        if (r == NVM_SAVE_FAILED) abort();
+        if (r == NVM_SAVE_FAILED) FUZZ_FAIL();
         memset(s_check, 0, blob_size);
-        if (!nvm_load(s_check, blob_size) || memcmp(s_check, s_blob, blob_size) != 0) abort();
-        if (nvm_save(s_blob, blob_size) != NVM_SAVE_UNCHANGED) abort();
+        if (!nvm_load(s_check, blob_size) || memcmp(s_check, s_blob, blob_size) != 0) FUZZ_FAIL();
+        if (nvm_save(s_blob, blob_size) != NVM_SAVE_UNCHANGED) FUZZ_FAIL();
     }
     return 0;
 }

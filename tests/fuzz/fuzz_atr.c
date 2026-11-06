@@ -1,5 +1,6 @@
 // atr_parse() on arbitrary bytes, and atr_build() -> atr_parse() on a description made from the same bytes: what the
 // parser reads back must be what the description says.
+#include "fuzz_common.h"
 #include "iso7816_pico/atr.h"
 
 #include <stdlib.h>
@@ -34,29 +35,29 @@ static void check_round_trip(const uint8_t *data, size_t size) {
 
     uint8_t atr[ATR_MAX_LEN];
     size_t n = atr_build(&d, atr, sizeof atr);
-    if (n == 0 || n > ATR_MAX_LEN) abort(); // every description above is valid and fits
-    if (atr_build(&d, atr, n - 1) != 0) abort();
+    if (n == 0 || n > ATR_MAX_LEN) FUZZ_FAIL(); // every description above is valid and fits
+    if (atr_build(&d, atr, n - 1) != 0) FUZZ_FAIL();
 
     atr_info_t info;
-    if (!atr_parse(atr, n, &info) || !info.valid) abort();
-    if (info.inverse != d.inverse) abort();
-    if (atr[0] != (d.inverse ? 0x3F : 0x3B) || (atr[1] & 0xF) != d.historical_len) abort();
+    if (!atr_parse(atr, n, &info) || !info.valid) FUZZ_FAIL();
+    if (info.inverse != d.inverse) FUZZ_FAIL();
+    if (atr[0] != (d.inverse ? 0x3F : 0x3B) || (atr[1] & 0xF) != d.historical_len) FUZZ_FAIL();
     if (memcmp(&atr[n - d.historical_len - (info.protocols != 1 ? 1 : 0)], d.historical, d.historical_len) != 0)
-        abort();
+        FUZZ_FAIL();
 
     // Protocols: one bit per TD(i), T=0 alone without any TD.
     uint16_t protocols = 0;
     for (int i = 1; i < d.levels; i++) protocols |= (uint16_t)(1u << d.level[i].protocol);
     if (d.levels == 1) protocols = 1;
-    if (info.protocols != protocols) abort();
-    if (d.levels > 1 && info.first_protocol != d.level[1].protocol) abort();
+    if (info.protocols != protocols) FUZZ_FAIL();
+    if (d.levels > 1 && info.first_protocol != d.level[1].protocol) FUZZ_FAIL();
 
     // TC1 = N; TA2 = specific mode; TC2 = WI.
-    if (info.n != ((d.level[0].present & ATR_TC) ? d.level[0].tc : 0)) abort();
+    if (info.n != ((d.level[0].present & ATR_TC) ? d.level[0].tc : 0)) FUZZ_FAIL();
     bool specific = d.levels > 1 && (d.level[1].present & ATR_TA);
-    if (info.specific_mode != specific) abort();
-    if (specific && info.specific_protocol != (d.level[1].ta & 0xF)) abort();
-    if (info.wi != ((d.levels > 1 && (d.level[1].present & ATR_TC)) ? d.level[1].tc : 10)) abort();
+    if (info.specific_mode != specific) FUZZ_FAIL();
+    if (specific && info.specific_protocol != (d.level[1].ta & 0xF)) FUZZ_FAIL();
+    if (info.wi != ((d.levels > 1 && (d.level[1].present & ATR_TC)) ? d.level[1].tc : 10)) FUZZ_FAIL();
 
     // F / D from TA1 when it codes a defined pair, unless TA2 asks for the implicit values.
     uint16_t f = 372;
@@ -69,7 +70,7 @@ static void check_round_trip(const uint8_t *data, size_t size) {
         f = 372;
         dd = 1;
     }
-    if (info.f != f || info.d != dd) abort();
+    if (info.f != f || info.d != dd) FUZZ_FAIL();
 
     // T=1 parameters: from the first level >= 3 that T=1 introduces.
     uint8_t ifsc = 32, cwi = 13, bwi = 4;
@@ -85,10 +86,10 @@ static void check_round_trip(const uint8_t *data, size_t size) {
         if (lv->present & ATR_TC) crc = lv->tc & 1;
         break;
     }
-    if (info.ifsc != ifsc || info.cwi != cwi || info.bwi != bwi || info.crc != crc) abort();
+    if (info.ifsc != ifsc || info.cwi != cwi || info.bwi != bwi || info.crc != crc) FUZZ_FAIL();
 
     // Any truncation of a valid ATR is rejected (the historical bytes and the TCK are counted by the parser).
-    if (atr_parse(atr, n - 1, &info)) abort();
+    if (atr_parse(atr, n - 1, &info)) FUZZ_FAIL();
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
@@ -96,7 +97,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     // Raw parse: only memory safety and self-consistency.
     atr_info_t info;
     if (atr_parse(data, size, &info)) {
-        if (!info.valid || !(info.protocols & (1u << info.first_protocol)) || !info.f || !info.d) abort();
+        if (!info.valid || !(info.protocols & (1u << info.first_protocol)) || !info.f || !info.d) FUZZ_FAIL();
     }
     check_round_trip(data, size);
     return 0;

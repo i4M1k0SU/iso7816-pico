@@ -49,18 +49,18 @@ static void check_card_blocks(void) {
         bool cut = n >= TX_LOG_SIZE; // the log is full: its last block may be incomplete
         if (n - pos < 3 + edc) {
             if (cut) break;
-            abort();
+            FUZZ_FAIL();
         }
         size_t len = tx[pos + 2];
-        if (len > 254) abort();
+        if (len > 254) FUZZ_FAIL();
         if (n - pos < 3 + len + edc) {
             if (cut) break;
-            abort();
+            FUZZ_FAIL();
         }
         uint8_t blk[3 + 254 + 2];
         memcpy(blk, &tx[pos], 3 + len);
         edc_append(blk, 3 + len);
-        if (memcmp(blk + 3 + len, &tx[pos + 3 + len], edc) != 0) abort();
+        if (memcmp(blk + 3 + len, &tx[pos + 3 + len], edc) != 0) FUZZ_FAIL();
         pos += 3 + len + edc;
     }
 }

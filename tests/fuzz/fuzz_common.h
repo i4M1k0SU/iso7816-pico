@@ -7,6 +7,12 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+// A harness check that does not hold.  A bare abort() shows up in libFuzzer's output only as "deadly signal", so say
+// which check it was first.
+#define FUZZ_FAIL() (fprintf(stderr, "fuzz check failed at %s:%d\n", __FILE__, __LINE__), abort())
 
 // Inputs larger than this are skipped: everything the transports can buffer fits easily, and the fake PHY queue
 // (64 KB) must hold the input plus the bytes a harness adds to it.

@@ -32,26 +32,26 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     size_t n;
     const uint8_t *tx = fake_phy_tx_log(&n);
     if (!ok) {
-        if (n) abort(); // a refused request is never answered (the card stays mute)
+        if (n) FUZZ_FAIL(); // a refused request is never answered (the card stays mute)
         return 0;
     }
     // PPSS PPS0 [PPS1] PCK
-    if (n < 3 || n > 4 || tx[0] != 0xFF) abort();
+    if (n < 3 || n > 4 || tx[0] != 0xFF) FUZZ_FAIL();
     uint8_t x = 0;
     for (size_t i = 0; i < n; i++) x ^= tx[i];
-    if (x) abort();
+    if (x) FUZZ_FAIL();
     uint8_t pps0 = tx[1];
-    if ((pps0 & 0xE0) || (pps0 & 0xF) != r.protocol || !(offered & (1u << r.protocol))) abort();
-    if (r.protocol != (data[3] & 0xF)) abort();
-    if (((pps0 & 0x10) != 0) != (n == 4) || r.fd_changed != (n == 4)) abort();
+    if ((pps0 & 0xE0) || (pps0 & 0xF) != r.protocol || !(offered & (1u << r.protocol))) FUZZ_FAIL();
+    if (r.protocol != (data[3] & 0xF)) FUZZ_FAIL();
+    if (((pps0 & 0x10) != 0) != (n == 4) || r.fd_changed != (n == 4)) FUZZ_FAIL();
     if (r.fd_changed) {
         // Granted PPS1 = requested PPS1, and the result is what it codes.
-        if (!(data[3] & 0x10) || tx[2] != data[4]) abort();
-        if (r.f != atr_fi(tx[2] >> 4) || r.d != atr_di(tx[2] & 0xF)) abort();
-        if (!phy_params_supported(r.f, r.d)) abort();
-        if (with_hook && !accept(r.f, r.d, r.protocol)) abort();
+        if (!(data[3] & 0x10) || tx[2] != data[4]) FUZZ_FAIL();
+        if (r.f != atr_fi(tx[2] >> 4) || r.d != atr_di(tx[2] & 0xF)) FUZZ_FAIL();
+        if (!phy_params_supported(r.f, r.d)) FUZZ_FAIL();
+        if (with_hook && !accept(r.f, r.d, r.protocol)) FUZZ_FAIL();
     } else if (r.f != cur.f || r.d != cur.d) {
-        abort();
+        FUZZ_FAIL();
     }
     return 0;
 }
