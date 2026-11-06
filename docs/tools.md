@@ -283,6 +283,40 @@ built-in:
 そのためセッション中は `refused: a card session is active` を返して実行しない。
 `bootsel` と `reboot` はセッション中でも実行する (セッションを捨てるのが目的なので)。
 
+## リリース
+
+`v` で始まるタグを push すると `.github/workflows/release.yml` がデモ (`examples/demo`) を pico と pico2 向けに CI と
+同じツールチェーン・同じ cmake の設定でビルドし、そのタグの GitHub Release に次のファイルを添付する。
+
+- `iso7816-pico-demo-<タグ>-pico.uf2` / `iso7816-pico-demo-<タグ>-pico.elf`
+- `iso7816-pico-demo-<タグ>-pico2.uf2` / `iso7816-pico-demo-<タグ>-pico2.elf`
+
+手順は次のとおりである。タグは `vMAJOR.MINOR` で、`include/iso7816_pico/version.h` の版と一致させる。
+
+1. `version.h` の `ISO7816_PICO_VERSION_MAJOR` / `_MINOR` / `_STRING` を新しい版に上げ、master にコミットする
+   (CMake の `ISO7816_PICO_VERSION` もここから読まれる)。
+2. そのコミットに署名付きタグを打って push する。
+
+```sh
+git tag -s v1.1 -m "iso7816-pico 1.1"
+git push origin v1.1
+```
+
+ワークフローは最初にタグ名と `version.h` を比べ、一致しなければ (`v1.1` のタグに対して `version.h` が 1.0 のままなど)
+ビルドせずに失敗する。リリースは `gh release create --generate-notes` で作るので、リリースノートは前のタグからの
+プルリクエストの一覧になる。同じタグで再実行した場合はリリースを作り直さず、添付ファイルを上書きする。
+
+各ビルドは `build/generated/iso7816_pico_build.h` のコミットが HEAD の先頭 7 文字と一致し、`-dirty` でないことを確かめる。
+したがってリリースの UF2 はバナーにタグのコミットを出す (`--- iso7816-pico 1.1 (<タグのコミット>) ---`)。
+
+タグを打つ前に確かめたいときは、Actions の画面か `gh workflow run release.yml --ref <ブランチ>` で手動実行する
+(workflow_dispatch)。release.yml か `.github/actions/setup-pico-toolchain` を変えるプルリクエストでも自動で走る。
+タグ以外での実行は予行で、版の比較は表示するだけ、リリースは作らず、ファイルはワークフローの成果物 (artifact) として
+`iso7816-pico-demo-v<版>-<コミット>-<ボード>` の名前で残る。
+
+ツールチェーン (Arm GNU Toolchain、picotool / pioasm、Pico SDK) の取得とキャッシュは `.github/actions/setup-pico-toolchain`
+にまとめてあり、CI のファームウェアのジョブと共用している。版を変えるときはこのアクションの入力の既定値を変える。
+
 ## 配線の確認
 
 コンソールの `gpio` で全 GPIO を監視しながらリーダーに活性化させると、ISO 7816-3 の順序 (I/O 解放 → CLK 開始 →

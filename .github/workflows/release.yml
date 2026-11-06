@@ -1,0 +1,127 @@
+name: Release
+
+# Pushing a version tag (vMAJOR.MINOR, equal to include/iso7816_pico/version.h) builds the demo firmware for pico and
+# pico2 and attaches the UF2 and ELF files to a GitHub Release of that tag. Run by hand on a branch
+# (workflow_dispatch), or from a pull request that changes this workflow or the toolchain action, it is a dry run: the
+# same build, uploaded as workflow artifacts only, without a release.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/actions/setup-pico-toolchain/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Check the tag against version.h
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.check.outputs.label }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Compare the tag with ISO7816_PICO_VERSION_MAJOR / _MINOR
+        id: check
+        run: |
+          set -euo pipefail
+          h=include/iso7816_pico/version.h
+          major=$(sed -n 's/^#define ISO7816_PICO_VERSION_MAJOR[[:space:]]\+\([0-9]\+\)[[:space:]]*$/\1/p' "$h")
+          minor=$(sed -n 's/^#define ISO7816_PICO_VERSION_MINOR[[:space:]]\+\([0-9]\+\)[[:space:]]*$/\1/p' "$h")
+          if [ -z "$major" ] || [ -z "$minor" ]; then
+            echo "::error file=$h::cannot read ISO7816_PICO_VERSION_MAJOR / _MINOR"
+            exit 1
+          fi
+          want="v$major.$minor"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            if [ "$GITHUB_REF_NAME" != "$want" ]; then
+              echo "::error file=$h::tag $GITHUB_REF_NAME does not match version.h ($want): fix the tag or version.h"
+              exit 1
+            fi
+            label=$GITHUB_REF_NAME
+          else
+            # Dry run: no tag to check; name the files after the version and the commit instead.
+            echo "::notice::dry run on $GITHUB_REF_NAME, version.h says $want"
+            label="$want-$(git rev-parse --short=7 HEAD)"
+          fi
+          echo "label=$label" >> "$GITHUB_OUTPUT"
+          echo "files are named iso7816-pico-demo-$label-<board>.{uf2,elf}"
+
+  firmware:
+    name: Demo firmware (${{ matrix.board }})
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        board: [pico, pico2]
+    env:
+      NAME: iso7816-pico-demo-${{ needs.version.outputs.label }}-${{ matrix.board }}
+    steps:
+      # The default fetch-depth of 1 is enough: the banner only needs HEAD (the tag's commit).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-pico-toolchain
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DPICO_SDK_PATH=$PICO_TOOLS/pico-sdk
+          -Dpicotool_DIR=$PICO_TOOLS/picotool
+          -Dpioasm_DIR=$PICO_TOOLS/pioasm
+          -DPICO_BOARD=${{ matrix.board }}
+      - name: Build
+        run: cmake --build build
+      # The console banner shows these commits; a release build must carry the clean commit it was built from.
+      - name: Check the commit in iso7816_pico_build.h
+        run: |
+          set -euo pipefail
+          f=build/generated/iso7816_pico_build.h
+          cat "$f"
+          want=$(git rev-parse --short=7 HEAD)
+          for m in ISO7816_PICO_COMMIT ISO7816_PICO_APP_COMMIT; do
+            if ! grep -qx "#define $m \"$want\"" "$f"; then
+              echo "::error::$m in $f is not \"$want\" (dirty tree or no git?)"
+              exit 1
+            fi
+          done
+      - name: Collect the files
+        run: |
+          mkdir dist
+          cp build/examples/demo/iso7816-pico-demo.uf2 "dist/$NAME.uf2"
+          cp build/examples/demo/iso7816-pico-demo.elf "dist/$NAME.elf"
+          ls -l dist
+      - name: Upload the firmware
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ env.NAME }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Attach the firmware to the release
+    if: github.ref_type == 'tag'
+    needs: firmware
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the firmware
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          pattern: iso7816-pico-demo-*
+          merge-multiple: true
+      - name: Create the release, or update its files on a re-run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ls -l dist
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" --clobber dist/*
+          else
+            gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes dist/*
+          fi

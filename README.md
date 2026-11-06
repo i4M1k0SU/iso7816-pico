@@ -71,6 +71,8 @@ in [include/iso7816_pico/config.h](include/iso7816_pico/config.h)). At startup t
 ```
 
 On Linux / macOS, `tools/flash.sh` and `tools/sc_test.py` (pyscard) do the same job.
+Prebuilt demo UF2s for pico and pico2 are attached to each
+[GitHub Release](https://github.com/i4M1k0SU/iso7816-pico/releases), so the demo can be tried without building.
 There are also host-side tests that run without a Pico (`tests/`) and a GitHub Actions CI.
 
 With an SCR3310 on Windows 11, the bundled demo card passes every check of `sc_test.ps1` in T=0, in T=1 and with PPS
