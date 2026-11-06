@@ -36,8 +36,8 @@ static const atr_desc_t s_atr = {
 ## 2. 永続データ
 
 `nvm_data_t` のような構造体を 1 つ用意して `.nvm_blob` / `.nvm_size` に登録する。
-起動時にフラッシュから読み込まれ、`nvm_mark_dirty()` (UPDATE BINARY などで自動、ハンドラからは `card_nvm_changed()`)
-されていれば、次のコマンドを待つ間に文字の送受信が `NVM_IDLE_SAVE_MS` (既定 200 ms) 途絶えた時点で書き戻される。
+起動時にフラッシュから読み込まれ、変更済み (dirty) の印が付いていれば (UPDATE BINARY などの標準コマンドは自動で付ける。
+アプレットのハンドラやフックで構造体を書き換えたら `card_nvm_changed()` を呼ぶ)、次のコマンドを待つ間に文字の送受信が `NVM_IDLE_SAVE_MS` (既定 200 ms) 途絶えた時点で書き戻される。
 RST が Low になったときにも、まだ dirty なら書き戻す (予備)。PIN / PUK の試行回数は例外で、照合の前に同期で保存する
 (「PIN」の節)。
 
@@ -51,7 +51,7 @@ RST Low だけを書き戻しの契機にしないのは次の理由による。
 待ってから送るので問題にならないが、T=1 ではその間に届いたブロックが 8 段の PIO 受信 FIFO からあふれることがある。
 その場合リーダーは誤ったブロックまたは無応答として扱い、再送 (R ブロック) で回復するので、失うのは時間だけである。
 EF の本体や `sec_pin_t` の配列はこの構造体の中に置く。構造体のサイズが変わると保存済みイメージは捨てられ、
-ソース上の初期値に戻る (コンソール `x` でも初期化できる)。
+ソース上の初期値に戻る (コンソールの `erase` でも初期化できる)。
 
 書き戻しは次の規則で行う (`src/core/hal/nvm.c`)。
 
@@ -217,7 +217,7 @@ const applet_t my_applet = {
 | フィールド | 意味 |
 |-----------|------|
 | `iso_commands` | 標準コマンド ([internals.md](internals.md) の表) を有効にする |
-| `max_channels` | 論理チャネル数 (1..4) |
+| `max_channels` | 論理チャネル数 (1..`CARD_MAX_CHANNELS`。0 は 1、それを超える値は `CARD_MAX_CHANNELS` とみなす。`CARD_MAX_CHANNELS` は既定 4、最大 20) |
 | `proprietary_cla_decode` | CLA 8X..FX でもチャネル / チェイニング / SM bit を解釈するか。既定 false なので CLA 90 は「80 + チェイニング」ではなく別の CLA である |
 | `tx_extra_guard` | 自分の送信文字に付ける追加ガード ETU |
 | `name`, `version` | コンソール接続時のバナーと `card` コマンドに表示する名前と版。NULL なら CMake の `pico_set_program_name` / `pico_set_program_version` の値 |
@@ -226,7 +226,7 @@ const applet_t my_applet = {
 
 USB シリアルコンソールに独自のコマンドを足せる。`console_cmd_t` の表 (名前、`help` で表示する説明、ハンドラ) を
 `.console_cmds` / `.n_console_cmds` に登録する。コンソールは「名前 引数...」の 1 行を Enter で受け取り、名前が一致した
-ハンドラに残りの文字列 (前後の空白を除いたもの、無ければ空文字列) を渡す。出力は `log_printf()` (`sys/log.h`) で行う。
+ハンドラに残りの文字列 (前後の空白を除いたもの、無ければ空文字列) を渡す。出力は `log_printf()` (`iso7816_pico/log.h`) で行う。
 フレームワーク自身の名前 (help status card trace gpio pins apdu save erase bootsel reboot) が優先される。
 `help` (または空行の Enter) は組み込みコマンドを `built-in:`、プロファイルのコマンドを `.name` (カード名) の見出しの下に
 分けて表示する。

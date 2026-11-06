@@ -19,26 +19,28 @@ ISO 7816-3 (ATR / PPS / T=0 / T=1) と ISO 7816-4 (APDU / 論理チャネル / �
               │ main.c                    card_runtime_init / run    │
               └──────────────┬───────────────────────────────────────┘
                              │ include/iso7816_pico/*.h  (公開ヘッダ)
-  ┌──────────────────────────▼────────────────────────────────────┐
-  │ src/core/apdu/   ISO 7816-4                                   │
-  │   dispatch.c  CLA 解読・論理チャネル・チェイニング・SM フック・  │
-  │               AID 選択・ルーティング (アプレット → 標準 → フック) │
-  │   fs.c        MF/DF/EF, SELECT, BINARY/RECORD 系コマンド        │
-  │   sec.c       PIN, VERIFY/CHANGE/RESET RETRY/GET CHALLENGE 等    │
-  │   iso_cmds.c  標準コマンド表 (T=0 の case 判定にも使用)          │
-  ├───────────────────────────────────────────────────────────────┤
-  │ src/core/proto/  ISO 7816-3                                   │
-  │   session.c   ATR → PPS → プロトコル選択 → コマンドループ        │
-  │   atr.c       ATR の生成 / 解析   pps.c  PPS 応答と F/D 切替     │
-  │   t0.c        T=0 (手続きバイト, 61xx/6Cxx, GET RESPONSE, ENVELOPE)│
-  │   t1.c        T=1 (I/R/S ブロック, チェイニング, IFS, RESYNCH, WTX)│
-  │   hal/nvm.c   NVM ジャーナル (フラッシュ操作は port 側)           │
-  ├───────────────────────────────────────────────────────────────┤
-  │ src/pico/   RP2040 / RP2350 向け port とランタイム              │
-  │   hal/phy.c + iso7816.pio  PIO 文字層 (任意 F/D, 逆規約, エラー信号)│
-  │   hal/nvm_port.c  フラッシュ   hal/bootsel_button.c              │
-  │   sys/runtime.c  メインループ, ウォッチドッグ   sys/console.c     │
-  └───────────────────────────────────────────────────────────────┘
+  ┌──────────────────────────▼───────────────────────────────────────────┐
+  │ src/core/apdu/   ISO 7816-4                                          │
+  │   apdu.c      APDU の解析 (short / extended)、応答への TLV 追加      │
+  │   dispatch.c  CLA 解読・論理チャネル・チェイニング・SM フック・      │
+  │               AID 選択・ルーティング (アプレット → 標準 → フック)    │
+  │   fs.c        MF/DF/EF, SELECT, BINARY/RECORD 系コマンド             │
+  │   sec.c       PIN, VERIFY/CHANGE/RESET RETRY/GET CHALLENGE 等        │
+  │   iso_cmds.c  標準コマンド表 (T=0 の case 判定にも使用)              │
+  ├──────────────────────────────────────────────────────────────────────┤
+  │ src/core/proto/  ISO 7816-3                                          │
+  │   session.c   ATR → PPS → プロトコル選択 → コマンドループ            │
+  │   atr.c       ATR の生成 / 解析   pps.c  PPS 応答と F/D 切替         │
+  │   t0.c        T=0 (手続きバイト, 61xx/6Cxx, GET RESPONSE, ENVELOPE)  │
+  │   t1.c        T=1 (I/R/S ブロック, チェイニング, IFS, RESYNCH, WTX)  │
+  │ src/core/hal/nvm.c  NVM ジャーナル (フラッシュ操作は port 側)        │
+  ├──────────────────────────────────────────────────────────────────────┤
+  │ src/pico/   RP2040 / RP2350 向け port とランタイム                   │
+  │   hal/phy.c + iso7816.pio  PIO 文字層 (任意 F/D, 逆規約, エラー信号) │
+  │   hal/nvm_port.c  フラッシュ   hal/bootsel_button.c                  │
+  │   sys/runtime.c  メインループ, ウォッチドッグ   sys/console.c        │
+  │   sys/services.c  card.h のサービス (card_nvm_changed() など)        │
+  └──────────────────────────────────────────────────────────────────────┘
 ```
 
 `src/core/` は Pico SDK に依存せず、ホスト上のテスト (`tests/`) でそのままコンパイルされる。

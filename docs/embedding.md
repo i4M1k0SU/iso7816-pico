@@ -39,7 +39,7 @@ add_subdirectory(external/iso7816-pico)               # ライブラリだけが
 
 add_executable(my_card main.c card_profile.c applets/my_applet.c)
 target_link_libraries(my_card PRIVATE iso7816_pico::pico)
-pico_enable_stdio_usb(my_card 1)                      # USB コンソールと無操作 BOOTSEL のために必要
+pico_enable_stdio_usb(my_card 1)                      # 省略可 (ライブラリが pico_stdio_usb をリンクする)
 pico_enable_stdio_uart(my_card 0)                     # UART stdio は既定で有効。GP0 / GP1 を取るので切る
 pico_add_extra_outputs(my_card)
 ```
@@ -67,7 +67,8 @@ SDK は UART stdio を既定で有効にするので、`pico_enable_stdio_uart(<
 GP0 / GP1 (GP1 は CLK 接点の既定ピン) を取り、アプリケーションの `printf()` も 115200 bps の UART を待つ。
 フレームワークのコンソールとログは USB CDC だけに書くので、UART の有無に影響されない。
 `pico_stdio_usb` はライブラリの公開依存であり、外すことはできない (コンソール、picotool のリセットインターフェイス、
-1200 bps による BOOTSEL がこれに依存する)。TinyUSB を独自のデバイス構成で使うアプリケーションとは併用できない。
+1200 bps による BOOTSEL がこれに依存する)。ライブラリがリンクするので `pico_enable_stdio_usb(<target> 1)` は書かなくても
+USB stdio が有効になり、`pico_enable_stdio_usb(<target> 0)` と書いても無効にはならない。TinyUSB を独自のデバイス構成で使うアプリケーションとは併用できない。
 フレームワークが使うハードウェア資源の一覧は [8. フレームワークが使う資源](#8-フレームワークが使う資源) にある。
 
 VS Code の Raspberry Pi Pico 拡張で作ったプロジェクトなら、拡張が生成する `CMakeLists.txt` の先頭ブロック
