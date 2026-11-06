@@ -32,6 +32,22 @@
 #define ISO7816_PIN_RST  2
 #endif
 
+// Loopback self-test at every boot (phy_selftest(), result in the boot log): a test clock generated on
+// ISO7816_SELFTEST_PIN_CLK and the I/O line looped on ISO7816_SELFTEST_PIN_IO run the whole ATR path for a few
+// milliseconds without touching the card contacts.  Both pins must be unconnected (the clock pin is driven), and both
+// are left unassigned (GPIO_FUNC_NULL) afterwards.  An application that needs them (GP16 / GP17 are the SDK's default
+// SPI0 pins) chooses other spare pins here or sets either value to -1, which skips the test.
+//
+// The pins are checked when the framework is compiled: all of them GP0..GP29, the three contacts distinct, and the
+// self-test pins distinct from each other and from the contacts.
+#ifndef ISO7816_SELFTEST_PIN_CLK
+#define ISO7816_SELFTEST_PIN_CLK 16
+#endif
+#ifndef ISO7816_SELFTEST_PIN_IO
+#define ISO7816_SELFTEST_PIN_IO  17
+#endif
+#define ISO7816_SELFTEST_ENABLED (ISO7816_SELFTEST_PIN_CLK >= 0 && ISO7816_SELFTEST_PIN_IO >= 0)
+
 // ---- Protocol limits --------------------------------------------------------------------------------------------
 // Largest command data / response data the APDU layer buffers.  Extended length APDUs up to this size work over T=1
 // (and over T=0 via ENVELOPE / GET RESPONSE).  65535 is the ISO maximum; RAM is the only limit.
@@ -54,7 +70,8 @@
 // Flash area (at the very end of the chip) used by the NVM module to persist the card's data between power cycles.
 // It is divided into slots of (header + blob) rounded up to 4 KB sectors and the slots are written in turn, so with a
 // blob under 4 KB these 64 KB give 16 slots, i.e. 16 times the erase endurance of a single sector.  Must be a multiple
-// of 4096.
+// of 4096 (checked when the Pico port is compiled).  The program must end below the region: card_runtime_init()
+// checks that at boot and, if it does not, leaves the flash alone (the NVM is then not persisted).
 #ifndef NVM_FLASH_BYTES
 #define NVM_FLASH_BYTES   (64 * 1024)
 #endif

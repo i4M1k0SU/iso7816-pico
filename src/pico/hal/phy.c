@@ -27,6 +27,33 @@
 #define PHY_MIN_ETU_CLKS    8
 #define PHY_MAX_EXTRA_GUARD 20     // frame must fit in one 32-bit FIFO word
 
+// ---- Pin checks ---------------------------------------------------------------------------------------------------
+// The card contacts and the self-test pins are compile-time constants, so a bad configuration fails the build instead
+// of misbehaving at run time.  Only GP0..GP29 are supported: the `wait gpio` patch, the 32-bit pin masks and the
+// console's `gpio` command all assume a single 30-pin bank (the RP2350B's GP30..GP47 would need the PIO GPIO base).
+#define PHY_PIN_VALID(p) ((p) >= 0 && (p) < 30)
+#if !PHY_PIN_VALID(ISO7816_PIN_IO) || !PHY_PIN_VALID(ISO7816_PIN_CLK) || !PHY_PIN_VALID(ISO7816_PIN_RST)
+#error "ISO7816_PIN_IO / ISO7816_PIN_CLK / ISO7816_PIN_RST must be GPIO numbers 0..29"
+#endif
+#if ISO7816_PIN_IO == ISO7816_PIN_CLK || ISO7816_PIN_IO == ISO7816_PIN_RST || ISO7816_PIN_CLK == ISO7816_PIN_RST
+#error "ISO7816_PIN_IO, ISO7816_PIN_CLK and ISO7816_PIN_RST must be three different GPIOs"
+#endif
+#if ISO7816_SELFTEST_ENABLED
+#if !PHY_PIN_VALID(ISO7816_SELFTEST_PIN_CLK) || !PHY_PIN_VALID(ISO7816_SELFTEST_PIN_IO)
+#error "ISO7816_SELFTEST_PIN_CLK / ISO7816_SELFTEST_PIN_IO must be GPIO numbers 0..29 (or -1 to disable the self-test)"
+#endif
+#if ISO7816_SELFTEST_PIN_CLK == ISO7816_SELFTEST_PIN_IO
+#error "ISO7816_SELFTEST_PIN_CLK and ISO7816_SELFTEST_PIN_IO must be different GPIOs"
+#endif
+#if ISO7816_SELFTEST_PIN_CLK == ISO7816_PIN_IO || ISO7816_SELFTEST_PIN_CLK == ISO7816_PIN_CLK || \
+    ISO7816_SELFTEST_PIN_CLK == ISO7816_PIN_RST || ISO7816_SELFTEST_PIN_IO == ISO7816_PIN_IO || \
+    ISO7816_SELFTEST_PIN_IO == ISO7816_PIN_CLK || ISO7816_SELFTEST_PIN_IO == ISO7816_PIN_RST
+#error "the self-test pins must not be card contacts (ISO7816_PIN_*): the test drives a clock on them"
+#endif
+#endif
+
+// The card state machines.  Fixed numbers so that the register accesses below stay constants; phy_init() claims both,
+// so application code calling pio_claim_unused_sm(pio0, ...) gets SM2 / SM3 instead of reprogramming the receiver.
 static PIO s_pio = pio0;
 static const uint s_sm_rx = 0;
 static const uint s_sm_tx = 1;
@@ -221,6 +248,18 @@ static inline uint8_t decode_byte(uint32_t w) {
     return b;
 }
 
+// The receiver ends every character with `push block`: with the 8-deep FIFO full it stalls there and does not watch
+// the line, so a character the reader sends meanwhile is lost or mis-framed and shows up only later as a parity / EDC
+// error or a short block.  FDEBUG.RXSTALL latches such a stall (write 1 to clear); count it.
+#define RX_STALL_BIT (1u << (PIO_FDEBUG_RXSTALL_LSB + s_sm_rx))
+
+static inline void rx_check_overrun(void) {
+    if (s_pio->fdebug & RX_STALL_BIT) {
+        s_pio->fdebug = RX_STALL_BIT;
+        s_stats.rx_overruns++;
+    }
+}
+
 static inline bool parity_ok(uint32_t w, uint8_t b) {
     bool p_line = (w >> 8) & 1;
     bool p_logic = s_params.inverse ? !p_line : p_line;
@@ -271,6 +310,7 @@ static void sm_configure(void) {
     tx_set_frame_bits(s_frame_bits);
     pio_sm_exec(s_pio, s_sm_tx, pio_encode_mov(pio_osr, pio_null));
 
+    s_pio->fdebug = RX_STALL_BIT;   // a stall from before this configuration is not an overrun of this session
     pio_sm_set_enabled(s_pio, s_sm_tx, true);
     pio_sm_set_enabled(s_pio, s_sm_rx, true);
 }
@@ -280,6 +320,10 @@ static void sm_configure(void) {
 // ---------------------------------------------------------------------------
 
 void phy_init(void) {
+    // Reserve the card state machines before anything else can claim them (panics if the application already did).
+    pio_sm_claim(s_pio, s_sm_rx);
+    pio_sm_claim(s_pio, s_sm_tx);
+
     // RST: plain input, pulled down so that "no reader" reads as reset.
     gpio_init(ISO7816_PIN_RST);
     gpio_set_dir(ISO7816_PIN_RST, GPIO_IN);
@@ -401,6 +445,7 @@ bool phy_apply_params(const phy_params_t *p) {
 //   0  nothing available
 //  -1  parity error (error signal already sent)
 static int rx_pop(uint8_t *byte) {
+    rx_check_overrun();
     if (pio_sm_is_rx_fifo_empty(s_pio, s_sm_rx)) return 0;
     uint32_t w = pio_sm_get(s_pio, s_sm_rx);
     uint8_t b = decode_byte(w);
@@ -526,12 +571,18 @@ const phy_stats_t *phy_stats(void) { return &s_stats; }
 
 // ---------------------------------------------------------------------------
 // Loopback self-test: the whole ATR path (constants, frame delay, TX frames, RX echo) driven by a Pico-generated clock
-// on a spare pin, with I/O looped on another spare pin.  Nothing on the card contacts is touched.
+// on a spare pin (ISO7816_SELFTEST_PIN_CLK), with I/O looped on another spare pin (ISO7816_SELFTEST_PIN_IO).  Nothing
+// on the card contacts is touched; both spare pins are left unassigned (GPIO_FUNC_NULL) afterwards.
 // ---------------------------------------------------------------------------
-#define SELFTEST_CLK_PIN 16
-#define SELFTEST_IO_PIN  17
+#define SELFTEST_CLK_PIN ISO7816_SELFTEST_PIN_CLK
+#define SELFTEST_IO_PIN  ISO7816_SELFTEST_PIN_IO
 #define SELFTEST_CLK_DIV 32   // clkgen: system clock cycles per test clock period
 
+#if !ISO7816_SELFTEST_ENABLED
+void phy_selftest(char *msg, size_t cap) {
+    snprintf(msg, cap, "selftest: disabled (ISO7816_SELFTEST_PIN_CLK / _IO = -1)");
+}
+#else
 void phy_selftest(char *msg, size_t cap) {
     static const uint8_t atr[] = { 0x3B, 0x08, 'P', 'i', 'c', 'o', '7', '8', '1', '6' };
     const uint32_t selftest_clk_hz = clock_get_hz(clk_sys) / SELFTEST_CLK_DIV;   // 3.9 MHz at 125 MHz
@@ -641,3 +692,4 @@ void phy_selftest(char *msg, size_t cap) {
     gpio_set_function(SELFTEST_CLK_PIN, GPIO_FUNC_NULL);
     gpio_set_function(SELFTEST_IO_PIN, GPIO_FUNC_NULL);
 }
+#endif

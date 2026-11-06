@@ -13,6 +13,7 @@
 #include "hardware/watchdog.h"
 #include "pico/bootrom.h"
 #include "pico/stdio.h"
+#include "pico/stdio/driver.h"
 #include "pico/stdio_usb.h"
 #include "pico/stdlib.h"
 #include "tusb.h"
@@ -108,6 +109,11 @@ void log_apdu(const char *name, uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2
     log_printf("%s", buf);
 }
 
+// All console output goes straight to the USB CDC driver, never through stdio_put_string(): that would also feed
+// every other stdio driver the application has linked, and a 115200-baud UART blocks for ~87 us per character inside
+// the PHY's idle hook.  The writes below are paced by tud_cdc_write_available(), so the USB driver never waits either.
+static void usb_write(const char *s, size_t n) { stdio_usb.out_chars(s, (int)n); }
+
 void log_drain(void) {
     // While nobody is listening the ring keeps the most recent history, so a terminal opened later still shows what
     // happened.
@@ -120,7 +126,7 @@ void log_drain(void) {
     while (avail && s_tail != s_head) {
         size_t chunk = s_head > s_tail ? s_head - s_tail : LOG_RING_SIZE - s_tail;
         if (chunk > avail) chunk = avail;
-        stdio_put_string(&s_ring[s_tail], (int)chunk, false, false);
+        usb_write(&s_ring[s_tail], chunk);
         s_tail = (s_tail + chunk) % LOG_RING_SIZE;
         avail -= chunk;
     }
@@ -147,9 +153,9 @@ static void print_status(void) {
                (unsigned long)pins.clk_toggles, pins.io);
     log_printf("sessions   : %lu", (unsigned long)st->sessions);
     log_printf("rx/tx chars: %lu / %lu", (unsigned long)st->rx_chars, (unsigned long)st->tx_chars);
-    log_printf("errors     : rx parity %lu, tx echo %lu, tx timeout %lu",
-               (unsigned long)st->rx_parity_errors, (unsigned long)st->tx_echo_errors,
-               (unsigned long)st->tx_timeouts);
+    log_printf("errors     : rx parity %lu, rx overrun %lu, tx echo %lu, tx timeout %lu",
+               (unsigned long)st->rx_parity_errors, (unsigned long)st->rx_overruns,
+               (unsigned long)st->tx_echo_errors, (unsigned long)st->tx_timeouts);
     log_printf("last ATR   : %s", st->last_error ? st->last_error : "ok");
     log_printf("  first ATR echo %lu us after start; CLK by PIO counter %lu Hz",
                (unsigned long)st->dbg_delay_us, (unsigned long)st->dbg_clk_counted_hz);
@@ -222,6 +228,15 @@ static void cmd_card(const char *args) {
     print_card();
 }
 
+// Commands that keep the CPU (or the flash) for a long time run from the idle hook, i.e. also while the PHY waits for
+// the reader's next command; a reader sending meanwhile would overflow the 8-deep RX FIFO or time out.  They are
+// refused while a session is active, i.e. between the ATR and the next reset.
+static bool refuse_in_session(void) {
+    if (phy_in_reset()) return false;
+    log_printf("refused: a card session is active (close the reader connection first)");
+    return true;
+}
+
 static void cmd_trace(const char *args) {
     (void)args;
     size_t n;
@@ -236,6 +251,7 @@ static void cmd_trace(const char *args) {
 // activation raises I/O before RST, deactivation lowers RST before I/O).
 static void cmd_gpio(const char *args) {
     (void)args;
+    if (refuse_in_session()) return;
     log_printf("watching all GPIOs for 15 s - trigger the reader now");
     log_drain();
     uint32_t first = gpio_get_all(), changed = 0, seen_high = 0;
@@ -283,6 +299,7 @@ static void cmd_gpio(const char *args) {
 // Sample the contacts every 100 ms for 5 s; the card is not serviced meanwhile, so use this only for wiring checks.
 static void cmd_pins(const char *args) {
     (void)args;
+    if (refuse_in_session()) return;
     for (int i = 0; i < 50; i++) {
         phy_pins_t pins;
         phy_sample_pins(&pins);
@@ -322,10 +339,7 @@ static size_t parse_hex(const char *s, uint8_t *out, size_t cap) {
 static void cmd_apdu(const char *args) {
     static uint32_t s_seen_sessions = 0xFFFFFFFFu;
     static uint8_t buf[APDU_BUF_SIZE + 16];
-    if (!phy_in_reset()) {
-        log_printf("refused: a card session is active");
-        return;
-    }
+    if (refuse_in_session()) return;
     size_t n = parse_hex(args, buf, sizeof buf);
     apdu_t cmd;
     if (!n || !apdu_decode(buf, n, &cmd)) {
@@ -349,8 +363,11 @@ static void cmd_apdu(const char *args) {
     log_printf("SW %04X (%u data byte%s)", sw, (unsigned)resp.len, resp.len == 1 ? "" : "s");
 }
 
+// During a session a dirty blob is written by the idle save anyway (NVM_IDLE_SAVE_MS after the last character) and
+// by the reset that ends the session, so `save` is only for the time between sessions.
 static void cmd_save(const char *args) {
     (void)args;
+    if (refuse_in_session()) return;
     if (!card_profile->nvm_blob) {
         log_printf("this profile has no NVM blob");
         return;
@@ -363,6 +380,7 @@ static void cmd_save(const char *args) {
 
 static void cmd_erase(const char *args) {
     (void)args;
+    if (refuse_in_session()) return;
     log_printf("erasing NVM and rebooting ...");
     log_drain();
     sleep_ms(50);
@@ -391,11 +409,11 @@ static const console_cmd_t s_builtin[] = {
     { "status",  "statistics (clock, sessions, errors, last ATR)",            cmd_status  },
     { "card",    "card profile (ATR, applets, files, PINs, NVM)",             cmd_card    },
     { "trace",   "TX/RX trace of the last session start",                     cmd_trace   },
-    { "gpio",    "watch all GPIOs for 15 s (find the contacts)",              cmd_gpio    },
-    { "pins",    "watch RST/CLK/IO for 5 s",                                  cmd_pins    },
-    { "apdu",    "<hex>  run a command APDU through the dispatcher (no reader session)", cmd_apdu },
-    { "save",    "write the NVM now",                                         cmd_save    },
-    { "erase",   "erase the NVM (factory defaults) and reboot",               cmd_erase   },
+    { "gpio",    "watch all GPIOs for 15 s (find the contacts; no session)",  cmd_gpio    },
+    { "pins",    "watch RST/CLK/IO for 5 s (no session)",                     cmd_pins    },
+    { "apdu",    "<hex>  run a command APDU through the dispatcher (no session)", cmd_apdu },
+    { "save",    "write the NVM now (no session)",                            cmd_save    },
+    { "erase",   "erase the NVM (factory defaults) and reboot (no session)",  cmd_erase   },
     { "bootsel", "reboot into BOOTSEL (UF2 drive)",                           cmd_bootsel },
     { "reboot",  "reboot (run the firmware again)",                           cmd_reboot  },
 };
@@ -438,7 +456,7 @@ static char s_line[96];
 static size_t s_line_len;
 
 static void echo(const char *s, size_t n) {
-    if (stdio_usb_connected()) stdio_put_string(s, (int)n, false, false);
+    if (stdio_usb_connected() && tud_cdc_write_available() >= n) usb_write(s, n);
 }
 
 static void run_line(char *line) {
@@ -475,8 +493,9 @@ void console_poll(void) {
 
     static int prev;   // previous input byte: the LF of a CR LF pair is not a second Enter
     for (;;) {
-        int c = getchar_timeout_us(0);
-        if (c == PICO_ERROR_TIMEOUT || c < 0) return;
+        char in;   // USB only, like the output: input from other stdio drivers belongs to the application
+        if (stdio_usb.in_chars(&in, 1) != 1) return;
+        int c = (unsigned char)in;
         int last = prev;
         prev = c;
         if (c == '\r' || c == '\n') {
