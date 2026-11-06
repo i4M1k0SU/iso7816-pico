@@ -62,12 +62,23 @@ static void idle_nvm_save(void) {
     save_dirty_nvm("(idle)");
 }
 
+// A receiver FIFO overrun loses characters silently (they surface later as parity / EDC errors); say so in the log.
+static void report_rx_overruns(void) {
+    static uint32_t reported;
+    uint32_t n = phy_stats()->rx_overruns;
+    if (n != reported) {
+        log_printf("PHY: RX FIFO overrun (%lu so far): characters from the reader were lost", (unsigned long)n);
+        reported = n;
+    }
+}
+
 // Runs whenever the card has nothing to do: console, logs, BOOTSEL button, the application's hook.
 static void idle_service(void) {
     static absolute_time_t next_button_poll;
     static int held;
 
     if (WATCHDOG_TIMEOUT_MS) watchdog_update();
+    report_rx_overruns();
     console_poll();
     log_drain();
 

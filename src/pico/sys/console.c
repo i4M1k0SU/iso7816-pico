@@ -147,9 +147,9 @@ static void print_status(void) {
                (unsigned long)pins.clk_toggles, pins.io);
     log_printf("sessions   : %lu", (unsigned long)st->sessions);
     log_printf("rx/tx chars: %lu / %lu", (unsigned long)st->rx_chars, (unsigned long)st->tx_chars);
-    log_printf("errors     : rx parity %lu, tx echo %lu, tx timeout %lu",
-               (unsigned long)st->rx_parity_errors, (unsigned long)st->tx_echo_errors,
-               (unsigned long)st->tx_timeouts);
+    log_printf("errors     : rx parity %lu, rx overrun %lu, tx echo %lu, tx timeout %lu",
+               (unsigned long)st->rx_parity_errors, (unsigned long)st->rx_overruns,
+               (unsigned long)st->tx_echo_errors, (unsigned long)st->tx_timeouts);
     log_printf("last ATR   : %s", st->last_error ? st->last_error : "ok");
     log_printf("  first ATR echo %lu us after start; CLK by PIO counter %lu Hz",
                (unsigned long)st->dbg_delay_us, (unsigned long)st->dbg_clk_counted_hz);

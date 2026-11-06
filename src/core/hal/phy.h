@@ -39,6 +39,7 @@ typedef struct {
     uint32_t rx_parity_errors; // bad parity from reader -> error signal sent
     uint32_t tx_echo_errors;   // our own character read back differently
     uint32_t tx_timeouts;
+    uint32_t rx_overruns;      // receiver stalled on a full FIFO: characters from the reader may have been lost
     uint32_t clk_hz;           // measured during the last ATR
     uint32_t sys_clk_hz;       // clock the PIO runs at (0 when unknown, e.g. in the host tests)
     volatile uint32_t rst_rises; // RST rising edges seen (written by the RST interrupt)
@@ -73,7 +74,8 @@ typedef struct {
 
 void phy_sample_pins(phy_pins_t *p);
 
-// Loopback self-test on spare pins (GP16 clock, GP17 I/O); only in reset.
+// Loopback self-test on spare pins (Pico port: ISO7816_SELFTEST_PIN_CLK / _IO, GP16 / GP17 by default; only reports
+// "disabled" when they are -1); only in reset.
 void phy_selftest(char *msg, size_t cap);
 
 // One-time hardware setup (GPIOs, PIO programs, RST edge latch).

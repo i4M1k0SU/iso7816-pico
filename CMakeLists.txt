@@ -49,6 +49,8 @@ option(ISO7816_PICO_BUILD_EXAMPLES "Build the demo firmware in examples/" ${ISO7
 set(ISO7816_PIN_IO 4 CACHE STRING "GPIO of the card I/O contact (C7)")
 set(ISO7816_PIN_CLK 1 CACHE STRING "GPIO of the card CLK contact (C3)")
 set(ISO7816_PIN_RST 2 CACHE STRING "GPIO of the card RST contact (C2)")
+set(ISO7816_SELFTEST_PIN_CLK 16 CACHE STRING "Unconnected GPIO for the boot self-test clock (-1 = no self-test)")
+set(ISO7816_SELFTEST_PIN_IO 17 CACHE STRING "Unconnected GPIO for the boot self-test I/O loop (-1 = no self-test)")
 set(APDU_BUF_SIZE 4096 CACHE STRING "Largest command / response data field in bytes")
 set(CARD_MAX_CHANNELS 4 CACHE STRING "Logical channels (1..4)")
 set(SEC_PIN_MAX_LEN 16 CACHE STRING "Longest stored PIN / PUK")
@@ -93,6 +95,8 @@ target_compile_definitions(iso7816_pico_pico PUBLIC
         ISO7816_PIN_IO=${ISO7816_PIN_IO}
         ISO7816_PIN_CLK=${ISO7816_PIN_CLK}
         ISO7816_PIN_RST=${ISO7816_PIN_RST}
+        ISO7816_SELFTEST_PIN_CLK=${ISO7816_SELFTEST_PIN_CLK}
+        ISO7816_SELFTEST_PIN_IO=${ISO7816_SELFTEST_PIN_IO}
         LOG_RING_SIZE=${LOG_RING_SIZE}
         WATCHDOG_TIMEOUT_MS=${WATCHDOG_TIMEOUT_MS}
         NVM_IDLE_SAVE_MS=${NVM_IDLE_SAVE_MS}
