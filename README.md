@@ -1,6 +1,8 @@
 # ISO7816 Pico
 
-Raspberry Pi Pico (RP2040) / Pico 2 (RP2350) で ISO 7816 スマートカードを作るための **フレームワーク**。
+[![CI](https://github.com/i4M1k0SU/iso7816-pico/actions/workflows/ci.yml/badge.svg)](https://github.com/i4M1k0SU/iso7816-pico/actions/workflows/ci.yml)
+
+Raspberry Pi Pico (RP2040) / Pico 2 (RP2350) で ISO 7816 スマートカードを開発するためのフレームワーク。
 
 ビットレベルのプロトコル (スタートビット / パリティ / ガードタイム / ETU 計時) は PIO が担い、
 ISO 7816-3 (ATR / PPS / T=0 / T=1) と ISO 7816-4 (APDU / 論理チャネル / チェイニング / ファイルシステム / PIN / 標準コマンド)
