@@ -29,6 +29,7 @@ add_executable(iso7816_tests
         test_t1.c
         test_dispatch.c
         test_fs.c
+        test_fs_sec.c
         test_nvm.c
         test_card_suite.c
         # code under test
