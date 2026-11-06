@@ -28,6 +28,7 @@ add_executable(iso7816_tests
         test_t0.c
         test_t1.c
         test_dispatch.c
+        test_select.c
         test_fs.c
         test_fs_sec.c
         test_nvm.c

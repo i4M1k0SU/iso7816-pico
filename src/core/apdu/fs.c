@@ -265,6 +265,13 @@ static void file_changed(const fs_file_t *f) {
     if (card_profile->hooks.on_file_changed) card_profile->hooks.on_file_changed(f);
 }
 
+// Without a file system (profile.files == NULL) the commands below still answer with a status word instead of
+// passing the command on, so that the reader does not get 6D00 / 6E00 for a command the card knows.  ISO 7816-4
+// (5.6, table 6) gives 6A82 "file or application not found" when a short EF identifier (or, for SELECT, a file)
+// cannot be found, and 6986 "command not allowed (no current EF)" when the command addresses the current EF and
+// there is none.  The cursor of a profile without files is { NULL, NULL }, so binary_target / record_target give
+// exactly these.
+
 // Resolve the EF a BINARY command refers to (short EF id in P1 or current).  P1 = 100x xxxx carries an SFI of 1..30:
 // SFI 0 is not a short identifier (the current EF is addressed with P1 b8 = 0) and 31 is reserved.
 static uint16_t binary_target(const apdu_t *cmd, const fs_file_t **ef, uint32_t *offset) {
@@ -307,7 +314,7 @@ static uint16_t record_target(const apdu_t *cmd, const fs_file_t **ef) {
 // ---------------------------------------------------------------------------
 
 uint16_t fs_cmd_select(const apdu_t *cmd, apdu_resp_t *resp) {
-    if (!fs_present()) return APDU_UNHANDLED;
+    if (!fs_present()) return SW_FILE_NOT_FOUND;   // no file system: nothing to select (see above)
     fs_cursor_t *c = fs_cursor(cmd->channel);
     const fs_file_t *f = NULL;
     uint16_t fid = cmd->lc >= 2 ? (uint16_t)((cmd->data[0] << 8) | cmd->data[1]) : 0;
@@ -369,7 +376,6 @@ uint16_t fs_cmd_select(const apdu_t *cmd, apdu_resp_t *resp) {
 // ---------------------------------------------------------------------------
 
 uint16_t fs_cmd_read_binary(const apdu_t *cmd, apdu_resp_t *resp) {
-    if (!fs_present()) return APDU_UNHANDLED;
     const fs_file_t *ef;
     uint32_t off;
     uint16_t sw = binary_target(cmd, &ef, &off);
@@ -384,7 +390,6 @@ uint16_t fs_cmd_read_binary(const apdu_t *cmd, apdu_resp_t *resp) {
 }
 
 static uint16_t write_binary(const apdu_t *cmd) {
-    if (!fs_present()) return APDU_UNHANDLED;
     const fs_file_t *ef;
     uint32_t off;
     uint16_t sw = binary_target(cmd, &ef, &off);
@@ -412,7 +417,6 @@ uint16_t fs_cmd_write_binary(const apdu_t *cmd, apdu_resp_t *resp) {
 // 0E: erase from offset P1P2 up to the offset in the data field (2 bytes) or to the end of the file.
 uint16_t fs_cmd_erase_binary(const apdu_t *cmd, apdu_resp_t *resp) {
     (void)resp;
-    if (!fs_present()) return APDU_UNHANDLED;
     const fs_file_t *ef;
     uint32_t off;
     uint16_t sw = binary_target(cmd, &ef, &off);
@@ -452,7 +456,6 @@ static uint16_t resolve_record(const apdu_t *cmd, const fs_file_t *ef) {
 }
 
 uint16_t fs_cmd_read_record(const apdu_t *cmd, apdu_resp_t *resp) {
-    if (!fs_present()) return APDU_UNHANDLED;
     const fs_file_t *ef;
     uint16_t sw = record_target(cmd, &ef);
     if (sw != SW_OK) return sw;
@@ -484,7 +487,6 @@ uint16_t fs_cmd_read_record(const apdu_t *cmd, apdu_resp_t *resp) {
 }
 
 static uint16_t write_record(const apdu_t *cmd) {
-    if (!fs_present()) return APDU_UNHANDLED;
     const fs_file_t *ef;
     uint16_t sw = record_target(cmd, &ef);
     if (sw != SW_OK) return sw;
@@ -517,7 +519,6 @@ uint16_t fs_cmd_write_record(const apdu_t *cmd, apdu_resp_t *resp) {
 
 uint16_t fs_cmd_append_record(const apdu_t *cmd, apdu_resp_t *resp) {
     (void)resp;
-    if (!fs_present()) return APDU_UNHANDLED;
     if (cmd->p1 != 0) return SW_WRONG_P1P2;
     const fs_file_t *ef;
     uint16_t sw = record_target(cmd, &ef);
@@ -533,7 +534,6 @@ uint16_t fs_cmd_append_record(const apdu_t *cmd, apdu_resp_t *resp) {
 
 uint16_t fs_cmd_erase_record(const apdu_t *cmd, apdu_resp_t *resp) {
     (void)resp;
-    if (!fs_present()) return APDU_UNHANDLED;
     const fs_file_t *ef;
     uint16_t sw = record_target(cmd, &ef);
     if (sw != SW_OK) return sw;
@@ -557,7 +557,6 @@ uint16_t fs_cmd_erase_record(const apdu_t *cmd, apdu_resp_t *resp) {
 // A2: simple search (P2 b3..b1 = 100) forward from record P1 for records starting with the search string; returns the
 // matching record numbers.
 uint16_t fs_cmd_search_record(const apdu_t *cmd, apdu_resp_t *resp) {
-    if (!fs_present()) return APDU_UNHANDLED;
     const fs_file_t *ef;
     uint16_t sw = record_target(cmd, &ef);
     if (sw != SW_OK) return sw;

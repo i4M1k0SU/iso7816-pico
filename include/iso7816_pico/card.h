@@ -38,15 +38,27 @@ typedef struct applet {
     const apdu_cmd_desc_t *cmds;
     size_t n_cmds;
 
-    // Optional.  Called by SELECT; return the SW and put the FCI in resp. When NULL the framework answers 6F len { 84
-    // len AID } (unless P2 says "no response data").
+    // Optional.  T=0 only: the case (whether P3 is Lc or Le) of a command that is not in `cmds`, for an applet that
+    // decodes its commands in `process` (a switch on INS).  Consulted for the applet selected on the channel the CLA
+    // addresses, after its table and before the interindustry table and hooks.classify.  Return APDU_CASE_UNKNOWN for
+    // "not mine".  Without it such a command is case 1 under T=0: P3 is ignored and the data field is not received.
+    apdu_case_t (*classify)(uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2);
+
+    // Optional.  Called by SELECT (and by the implicit selections: the default applet after every ATR, MANAGE CHANNEL
+    // open, which pass a SELECT by DF name with P2 = 0C and discard the response).  The DF named like the AID (if any)
+    // is already current on cmd->channel; for a channel opened from a channel other than the basic one, the current
+    // files of that channel are, and they are put back after select().  Return the SW and put the FCI in resp.  9000
+    // or a warning (62xx / 63xx) keeps the applet selected; any other SW leaves the channel with no applet selected
+    // (the previous one was already deselected, the security state is cleared, the current file is unchanged by the
+    // SELECT, the response data is dropped; a failing MANAGE CHANNEL open does not open the channel).  When NULL the
+    // framework answers 6F len { 84 len AID } (unless P2 says "no response data").
     uint16_t (*select)(const apdu_t *cmd, apdu_resp_t *resp);
 
-    // Optional.  Another applet or DF is being selected on this channel.
+    // Optional.  Another applet or DF is being selected on this channel, or the channel is being closed.
     void (*deselect)(uint8_t channel);
 
     // Optional.  Catch-all for commands without a table handler.  Return APDU_UNHANDLED to let the interindustry
-    // commands / hooks try.
+    // commands / hooks try.  A switch-style applet should also provide `classify` (T=0).
     uint16_t (*process)(const apdu_t *cmd, apdu_resp_t *resp);
 
     // Optional.  Called after every ATR (volatile state back to defaults).
@@ -69,7 +81,7 @@ typedef struct {
     void (*on_file_changed)(const fs_file_t *f);    // after UPDATE/WRITE/ERASE/APPEND
 
     // --- commands -------------------------------------------------------------
-    // T=0 only: tell which case an INS not in any table has.
+    // T=0 only: tell which case an INS not in any table (nor known to the applet's classify) has.
     apdu_case_t (*classify)(uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2);
     // Last resort for commands nobody handled (return APDU_UNHANDLED for 6D00).
     uint16_t (*unhandled)(const apdu_t *cmd, apdu_resp_t *resp);
@@ -137,7 +149,7 @@ typedef struct {
     // --- ISO 7816-4 -----------------------------------------------------------
     const applet_t *const *applets;
     size_t n_applets;
-    const applet_t *default_applet; // implicitly selected after ATR (may be NULL)
+    const applet_t *default_applet; // implicitly selected (select() runs) after ATR (may be NULL)
     const fs_file_t *files;         // file tree, files[0] = MF (NULL = no file system)
     size_t n_files;
     sec_pin_t *pins;                // PIN objects (NULL = none)

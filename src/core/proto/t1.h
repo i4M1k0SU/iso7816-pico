@@ -10,6 +10,7 @@
 typedef struct {
     uint8_t ifsc;      // our maximum information field size (from ATR TA3)
     bool crc;          // CRC instead of LRC (from ATR TC3)
+    uint8_t cwi;       // character waiting time integer (from ATR TB3, default 13): CWT = (11 + 2^CWI) ETU
 } t1_config_t;
 
 // Call once per card session (after the ATR / PPS).
