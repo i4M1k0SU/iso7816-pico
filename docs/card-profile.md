@@ -36,19 +36,35 @@ static const atr_desc_t s_atr = {
 ## 2. 永続データ
 
 `nvm_data_t` のような構造体を 1 つ用意して `.nvm_blob` / `.nvm_size` に登録する。
-起動時にフラッシュから読み込まれ、セッション中に `nvm_mark_dirty()` (UPDATE BINARY や PIN カウンタの変更で自動) されていれば
-RST が Low になった後に書き戻される。フラッシュ書き込みでコマンド応答が遅れることはない。
+起動時にフラッシュから読み込まれ、`nvm_mark_dirty()` (UPDATE BINARY などで自動、ハンドラからは `card_nvm_changed()`)
+されていれば、次のコマンドを待つ間に文字の送受信が `NVM_IDLE_SAVE_MS` (既定 200 ms) 途絶えた時点で書き戻される。
+RST が Low になったときにも、まだ dirty なら書き戻す (予備)。PIN / PUK の試行回数は例外で、照合の前に同期で保存する
+(「PIN」の節)。
+
+RST Low だけを書き戻しの契機にしないのは次の理由による。
+
+* リーダーから給電するボード (README の配線どおり C1 VCC をダイオード経由で VSYS へ) では、非活性化で VCC が
+  1 ms 程度で落ちる。RST Low で始めた 4 KB の消去と書き込みは途中で電源を失い、何も残らない。
+* RST Low 中の保存にウォームリセットが重なると、ATR が 40 000 クロックの期限を過ぎる。
+
+アイドル時保存の代償として、書き込み中の 50-100 ms は割り込みが止まり CPU も塞がる。T=0 ではリーダーはカードの応答を
+待ってから送るので問題にならないが、T=1 ではその間に届いたブロックが 8 段の PIO 受信 FIFO からあふれることがある。
+その場合リーダーは誤ったブロックまたは無応答として扱い、再送 (R ブロック) で回復するので、失うのは時間だけである。
 EF の本体や `sec_pin_t` の配列はこの構造体の中に置く。構造体のサイズが変わると保存済みイメージは捨てられ、
 ソース上の初期値に戻る (コンソール `x` でも初期化できる)。
 
 書き戻しは次の規則で行う (`src/core/hal/nvm.c`)。
 
-* フラッシュ上のイメージと同じ内容なら書かない (VERIFY 成功のようにカウンタを減らして戻しただけの変更は無視される)。
+* フラッシュ上のイメージと同じ内容なら書かない。
 * 領域 (`NVM_FLASH_BYTES`、既定 64 KB) をスロット (ヘッダ + 構造体を 4 KB 単位に切り上げ) に分け、通し番号を付けて順繰りに書く。
   消去するのは次のスロットだけなので、各セクタの消去回数はスロット数分の 1 になる (構造体が 4 KB 未満なら 16 分の 1)。
 * 起動時は通し番号が最大で CRC の正しいスロットを採用する。書き込み中に電源が落ちても直前のイメージが残る。
-* PC/SC のホストが切断時にカードをリセットしない場合 (Windows の `SCARD_LEAVE_CARD`) は RST が Low にならず書き戻しが起きない。
-  `tools/sc_test.*` は `SCARD_RESET_CARD` で切断する。
+* そのためにはスロットが 2 つ以上必要である。1 つしか取れない大きさ (既定の 64 KB なら 32 752 バイトを超える構造体) では
+  保存のたびに唯一のイメージを消してから書くことになるので、`nvm_load()` / `nvm_save()` は拒否し (保存されない)、
+  起動時にその旨をログに出す。`_Static_assert(NVM_BLOB_FITS(sizeof(nvm_data_t)), "...")` (デモにある) でビルド時に検査できる。
+  大きな構造体には `NVM_FLASH_BYTES` を増やす。
+* 書き戻しはアイドル時に起きるので、PC/SC のホストが切断時にカードをリセットしなくても (Windows の `SCARD_LEAVE_CARD`)
+  セッション中に保存される。
 
 ## 3. ファイルシステム
 
@@ -71,6 +87,14 @@ EF の本体や `sec_pin_t` の配列はこの構造体の中に置く。構造�
 VERIFY (20) / CHANGE REFERENCE DATA (24) / RESET RETRY COUNTER (2C) / ENABLE・DISABLE VERIFICATION (28/26)
 をそのまま使用できる。ハンドラからは `sec_is_verified(ch, ref)` / `sec_set_verified()` で参照・設定する
 (EXTERNAL AUTHENTICATE 成功時に PIN 相当の権限を与える、など)。
+
+`sec_pin_t` の配列は NVM の構造体の中に置かなければならない (デモの `nvm_data_t.pins`)。VERIFY、CHANGE REFERENCE
+DATA、ENABLE/DISABLE VERIFICATION の PIN 照合と RESET RETRY COUNTER の PUK 照合では、リトライ回数を減らした構造体全体を
+照合の前にフラッシュへ書く (`sec.c` の `try_pin()`)。誤った PIN を送って 63Cx を受け取った直後に電源を切っても、減った回数が
+残るので総当たりできない。配列が構造体の外にあるとこの保存は役に立たず、回数は電源断で元に戻る。
+書き込みは 50-100 ms (割り込み停止) かかるが、既定のパラメータでは T=0 の WWT (約 0.7 s) / T=1 の BWT (約 1.2 s) に収まるので
+keep-alive は送らない。保存に失敗した場合はログに出し、回数は RAM 上で数え続ける (後のアイドル時保存で再試行する)。
+正しい PIN で回数を戻した変更は通常のアイドル時保存で書くので、照合 1 回につき最大 2 回の書き込みになる。
 
 PIN と PUK は既定では平文のまま NVM に置かれる。平文を残したくない場合は `hooks.pin_transform` を実装する。
 格納時 (CHANGE REFERENCE DATA、RESET RETRY COUNTER) と照合時 (VERIFY、PUK) の両方で値がこの関数を通るので、
@@ -166,7 +190,7 @@ static const console_cmd_t s_console_cmds[] = {
 |------|------|
 | `resp_put`, `resp_put_u8`, `resp_put_tlv` | 応答データの追加 (バッファ上限 `APDU_BUF_SIZE` で切り詰める) |
 | `card_keepalive()` | 時間のかかる処理中にリーダーを待たせる (T=0: NULL バイト 60、T=1: S(WTX)) |
-| `card_nvm_changed()` | 永続データを変更したので次の RST Low で保存する |
+| `card_nvm_changed()` | 永続データを変更したのでアイドル時 (または RST Low) に保存する |
 | `card_request_bootsel()` | 応答送出後に BOOTSEL へ再起動する |
 | `card_put_default_fci()` | 6F { 84 AID } 形式の FCI |
 | `fs_cursor`, `fs_child`, `fs_by_name`, `fs_by_sfi`, `fs_select_file`, `fs_record_*`, `fs_put_fcp` | ファイルシステム操作 |
