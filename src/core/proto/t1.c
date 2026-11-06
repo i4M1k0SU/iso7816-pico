@@ -87,14 +87,20 @@ static uint32_t cwt_us(void) {
 // error detection code
 // ---------------------------------------------------------------------------
 
+// CRC EDC (ATR TC3 b1 = 1).  ISO/IEC 7816-3 refers to the CRC of ISO/IEC 13239: generator x^16 + x^12 + x^5 + 1,
+// processed LSB first (reflected, 0x8408), register preset to FFFF.  The value sent is the register itself, with no
+// final ones' complement, high byte first: this is what the reader side does in practice, e.g. pcsc-lite's CCID driver
+// (src/openct/checksum.c csum_crc_compute: crctab of 0x8408, v = 0xFFFF, rc[0] = v >> 8, rc[1] = v & 0xFF; compared
+// with memcmp in proto-t1.c t1_verify_checksum) and AOSP's ST eSE HAL (esehal/src/checksum.c "CRC16/MCRF4XX variant
+// used in T=1", iso7816_t1.c do_chk: buf[n] = crc >> 8).  In the RevEng catalogue this is CRC-16/MCRF4XX (check value
+// 6F91 for "123456789"), i.e. the complement of CRC-16/IBM-SDLC (X-25, check value 906E).
 static uint16_t crc16(const uint8_t *p, size_t n) {
-    // ISO/IEC 13239 (as used by ISO 7816-3 T=1): x^16 + x^12 + x^5 + 1, reflected, initial value FFFF, final XOR FFFF.
     uint16_t c = 0xFFFF;
     for (size_t i = 0; i < n; i++) {
         c ^= p[i];
         for (int k = 0; k < 8; k++) c = (c & 1) ? (c >> 1) ^ 0x8408 : c >> 1;
     }
-    return (uint16_t)~c;
+    return c;
 }
 
 static size_t edc_len(void) { return s_cfg.crc ? 2 : 1; }
