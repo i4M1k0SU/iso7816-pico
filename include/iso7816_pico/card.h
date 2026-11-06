@@ -134,9 +134,10 @@ typedef struct {
 // ---------------------------------------------------------------------------
 // Console command: a line "name [arguments]" typed on the USB serial console (src/pico/sys/console.c) runs the handler
 // with the rest of the line (trimmed, possibly empty); it reports through log_printf() (iso7816_pico/log.h).  The
-// framework's own names (help status card trace gpio pins apdu save erase bootsel reboot) take precedence.  Handlers
-// run in the idle loop, i.e. between commands and while the card waits for the reader; keep them short or call
-// watchdog_update() / log_drain() in long loops (see the `gpio` command for an example).
+// framework's own names (help status card trace txperr gpio pins apdu save erase bootsel reboot) take precedence (the
+// boot-time profile check reports a profile command of the same name).  Handlers run in the idle loop, i.e. between
+// commands and while the card waits for the reader; keep them short or call watchdog_update() / log_drain() in long
+// loops (see the `gpio` command for an example).
 // ---------------------------------------------------------------------------
 typedef struct {
     const char *name; // matched exactly (case-sensitive); up to 8 characters keep the help aligned
@@ -145,7 +146,8 @@ typedef struct {
 } console_cmd_t;
 
 // ---------------------------------------------------------------------------
-// The profile.
+// The profile.  card_runtime_init() checks it at boot (src/core/apdu/profile_check.c) and logs every inconsistency as
+// a "profile: ..." line; see docs/card-profile.md.
 // ---------------------------------------------------------------------------
 typedef struct {
     // --- identity ---------------------------------------------------------------
